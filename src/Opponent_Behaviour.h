@@ -23,4 +23,8 @@ extern long CalculateIfWinning(long start_finish_piece);
 
 extern long CalculateOpponentsDistance(void);
 
+extern void CapturePreviousOpponentShadow(void);
+
+extern void UpdateInterpolatedOpponentShadow(float alpha);
+
 #endif /* _OPPONENT_BEHAVIOUR */

@@ -181,6 +181,13 @@ static COORD_3D opp_shadow_rear_left;
 static COORD_3D opp_shadow_rear_right;
 static COORD_3D opp_shadow_front_left;
 static COORD_3D opp_shadow_front_right;
+static COORD_3D prev_opp_shadow_rear_left;
+static COORD_3D prev_opp_shadow_rear_right;
+static COORD_3D prev_opp_shadow_front_left;
+static COORD_3D prev_opp_shadow_front_right;
+static bool opp_shadow_visible = false;
+static bool prev_opp_shadow_visible = false;
+static bool have_prev_opp_shadow = false;
 
 // wheel heights
 static long opp_actual_height[NUM_OPP_WHEEL_POSITIONS];
@@ -234,6 +241,11 @@ static void OpponentPlayerInteraction(void);
 static void MoveOpponentToOneSide(void);
 static void OpponentPushPlayer(void);
 
+#ifdef OPPONENT_SHADOW
+extern void RemoveShadowTriangles(void);
+extern void StoreShadowTriangle(D3DXVECTOR3 v1, D3DXVECTOR3 v2, D3DXVECTOR3 v3, long other_colour);
+#endif
+
 /*    ======================================================================================= */
 /*    Function:        ResetOpponent                                                            */
 /*                                                                                            */
@@ -257,7 +269,66 @@ static void ResetOpponent(void) {
 
     player_close_to_opponent = FALSE;
     opponent_behind_player = FALSE;
+    opp_shadow_visible = false;
+    prev_opp_shadow_visible = false;
+    have_prev_opp_shadow = false;
     return;
+}
+
+void CapturePreviousOpponentShadow(void) {
+#ifdef OPPONENT_SHADOW
+    prev_opp_shadow_rear_left = opp_shadow_rear_left;
+    prev_opp_shadow_rear_right = opp_shadow_rear_right;
+    prev_opp_shadow_front_left = opp_shadow_front_left;
+    prev_opp_shadow_front_right = opp_shadow_front_right;
+    prev_opp_shadow_visible = opp_shadow_visible;
+    have_prev_opp_shadow = true;
+#endif
+}
+
+void UpdateInterpolatedOpponentShadow(float alpha) {
+#ifdef OPPONENT_SHADOW
+    if (!opp_shadow_visible) {
+        RemoveShadowTriangles();
+        return;
+    }
+
+    if (!have_prev_opp_shadow) {
+        CapturePreviousOpponentShadow();
+    }
+
+    if (!prev_opp_shadow_visible) {
+        alpha = 1.0f;
+    }
+
+    if (alpha < 0.0f)
+        alpha = 0.0f;
+    if (alpha > 1.0f)
+        alpha = 1.0f;
+
+    auto LerpShadowCoord = [alpha](long from, long to) -> float {
+        return static_cast<float>(from) + (static_cast<float>(to) - static_cast<float>(from)) * alpha;
+    };
+
+    D3DXVECTOR3 v2(LerpShadowCoord(prev_opp_shadow_rear_left.x, opp_shadow_rear_left.x),
+                   7.0f + LerpShadowCoord(prev_opp_shadow_rear_left.y, opp_shadow_rear_left.y) / 2.0f,
+                   LerpShadowCoord(prev_opp_shadow_rear_left.z, opp_shadow_rear_left.z));
+    D3DXVECTOR3 v3(LerpShadowCoord(prev_opp_shadow_rear_right.x, opp_shadow_rear_right.x),
+                   7.0f + LerpShadowCoord(prev_opp_shadow_rear_right.y, opp_shadow_rear_right.y) / 2.0f,
+                   LerpShadowCoord(prev_opp_shadow_rear_right.z, opp_shadow_rear_right.z));
+    D3DXVECTOR3 v1(LerpShadowCoord(prev_opp_shadow_front_left.x, opp_shadow_front_left.x),
+                   7.0f + LerpShadowCoord(prev_opp_shadow_front_left.y, opp_shadow_front_left.y) / 2.0f,
+                   LerpShadowCoord(prev_opp_shadow_front_left.z, opp_shadow_front_left.z));
+    D3DXVECTOR3 v4(LerpShadowCoord(prev_opp_shadow_front_right.x, opp_shadow_front_right.x),
+                   7.0f + LerpShadowCoord(prev_opp_shadow_front_right.y, opp_shadow_front_right.y) / 2.0f,
+                   LerpShadowCoord(prev_opp_shadow_front_right.z, opp_shadow_front_right.z));
+
+    RemoveShadowTriangles();
+    StoreShadowTriangle(v2, v1, v3, 0);
+    StoreShadowTriangle(v1, v4, v3, 0);
+#else
+    (void)alpha;
+#endif
 }
 
 /*    ======================================================================================= */
@@ -463,11 +534,6 @@ static long B1bbbe[3] = {0, 0, 0}; // set by randomize.opponents.steering
 
 static long opponents_x_spans[NUM_X_SPANS] = {27, 27, 27, 27, 27, 26, 26, 26, 25, 25, 25, 24, 23, 23, 22, 21,
                                               20, 19, 18, 17, 15, 14, 11, 9,  7,  7,  7,  7,  7,  7,  7,  7};
-
-#ifdef OPPONENT_SHADOW
-extern void RemoveShadowTriangles(void);
-extern void StoreShadowTriangle(D3DXVECTOR3 v1, D3DXVECTOR3 v2, D3DXVECTOR3 v3, long other_colour);
-#endif
 
 // All three road heights tested against Amiga
 static void CalculateOpponentsRoadWheelPositions(void) {
@@ -744,6 +810,7 @@ static void CalculateOpponentsRoadWheelPositions(void) {
 #endif
 
 #ifdef OPPONENT_SHADOW
+    opp_shadow_visible = (draw_shadow != FALSE);
     // Calculate front left shadow y co-ordinate
     sx = opponents_road_x_position - opponents_shadow_x_span;
     CalculateOpponentsRoadWheelHeight(sx, sz, &opp_shadow_front_left.y);
@@ -751,6 +818,15 @@ static void CalculateOpponentsRoadWheelPositions(void) {
     // Calculate front right shadow y co-ordinate
     sx = opponents_road_x_position + opponents_shadow_x_span;
     CalculateOpponentsRoadWheelHeight(sx, sz, &opp_shadow_front_right.y);
+
+    if (!have_prev_opp_shadow) {
+        prev_opp_shadow_rear_left = opp_shadow_rear_left;
+        prev_opp_shadow_rear_right = opp_shadow_rear_right;
+        prev_opp_shadow_front_left = opp_shadow_front_left;
+        prev_opp_shadow_front_right = opp_shadow_front_right;
+        prev_opp_shadow_visible = opp_shadow_visible;
+        have_prev_opp_shadow = true;
+    }
 
     // Y co-ordinates need to be divided by 4 for display, but they're
     // already /2 because are in Amiga format (i.e. not * PC_FACTOR).

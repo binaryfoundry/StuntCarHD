@@ -42,7 +42,9 @@
 #define HEIGHT_ABOVE_ROAD (100)
 
 #define FURTHEST_Z (131072.0f)
-static const double LOGIC_STEP_SECONDS = 1.0 / 50.0;
+static const double BASE_LOGIC_STEP_SECONDS = 0.14; // original coarse game step (~1/7.14s)
+static const int PHYSICS_SUBSTEPS_PER_BASE_LOGIC = 7;
+static const double PHYSICS_STEP_SECONDS = BASE_LOGIC_STEP_SECONDS / PHYSICS_SUBSTEPS_PER_BASE_LOGIC;
 
 GameModeType GameMode = TRACK_MENU;
 
@@ -68,10 +70,14 @@ static double g_logicAccumulator = 0.0;
 static double g_lastFrameTime = 0.0;
 static double g_timingWindowStart = 0.0;
 static uint64_t g_renderFramesInWindow = 0;
-static uint64_t g_logicTicksInWindow = 0;
-static uint64_t g_logicTickTotal = 0;
+static uint64_t g_physicsTicksInWindow = 0;
+static uint64_t g_physicsTickTotal = 0;
+static uint64_t g_baseLogicTicksInWindow = 0;
+static uint64_t g_baseLogicTickTotal = 0;
 static double g_renderFpsDisplay = 0.0;
-static double g_logicTickRateDisplay = 0.0;
+static double g_physicsTickRateDisplay = 0.0;
+static double g_baseLogicTickRateDisplay = 0.0;
+static int g_baseLogicSubstepCounter = 0;
 
 bool bShowStats = FALSE;
 bool bNewGame = FALSE;
@@ -122,6 +128,9 @@ static long prev_player1_x = 0, prev_player1_y = 0, prev_player1_z = 0;
 static long prev_player1_x_angle = 0, prev_player1_y_angle = 0, prev_player1_z_angle = 0;
 static long prev_opponent_x = 0, prev_opponent_y = 0, prev_opponent_z = 0;
 static float prev_opponent_x_angle = 0.0f, prev_opponent_y_angle = 0.0f, prev_opponent_z_angle = 0.0f;
+static long prev_viewpoint1_x = 0, prev_viewpoint1_y = 0, prev_viewpoint1_z = 0;
+static long prev_viewpoint1_x_angle = 0, prev_viewpoint1_y_angle = 0, prev_viewpoint1_z_angle = 0;
+static long prev_target_x = 0, prev_target_y = 0, prev_target_z = 0;
 static bool have_prev_car_state = false;
 
 // Viewpoint 1 orientation
@@ -130,6 +139,12 @@ static long viewpoint1_x_angle, viewpoint1_y_angle, viewpoint1_z_angle;
 
 // Target (lookat) point
 static long target_x, target_y, target_z;
+
+// Backdrop viewpoint used by OnFrameRender (interpolated for smooth horizon/scenery motion).
+static long render_backdrop_viewpoint_y = 0;
+static long render_backdrop_viewpoint_x_angle = 0;
+static long render_backdrop_viewpoint_y_angle = 0;
+static long render_backdrop_viewpoint_z_angle = 0;
 
 /**************************************************************************
   DSInit
@@ -698,8 +713,12 @@ static long WrappedAngleDelta(long from, long to) {
     return delta;
 }
 
+static float LerpWrappedAngleUnits(long from, long to, float alpha) {
+    return static_cast<float>(from) + static_cast<float>(WrappedAngleDelta(from, to)) * alpha;
+}
+
 static float LerpWrappedPlayerAngle(long from, long to, float alpha) {
-    const float interpolated = static_cast<float>(from) + static_cast<float>(WrappedAngleDelta(from, to)) * alpha;
+    const float interpolated = LerpWrappedAngleUnits(from, to, alpha);
     return (interpolated * 2.0f * D3DX_PI) / 65536.0f;
 }
 
@@ -720,6 +739,10 @@ static float LerpFixedCoord(long from, long to, float alpha) {
     const float fromf = static_cast<float>(from);
     const float tof = static_cast<float>(to);
     return (fromf + (tof - fromf) * alpha) / static_cast<float>(1 << LOG_PRECISION);
+}
+
+static float LerpLong(long from, long to, float alpha) {
+    return static_cast<float>(from) + (static_cast<float>(to) - static_cast<float>(from)) * alpha;
 }
 
 static void BuildCarWorldTransform(D3DXMATRIX* out, float x, float y, float z, float xa, float ya, float za,
@@ -752,11 +775,21 @@ static void CapturePreviousCarState(void) {
     prev_opponent_x_angle = opponent_x_angle;
     prev_opponent_y_angle = opponent_y_angle;
     prev_opponent_z_angle = opponent_z_angle;
+    prev_viewpoint1_x = viewpoint1_x;
+    prev_viewpoint1_y = viewpoint1_y;
+    prev_viewpoint1_z = viewpoint1_z;
+    prev_viewpoint1_x_angle = viewpoint1_x_angle;
+    prev_viewpoint1_y_angle = viewpoint1_y_angle;
+    prev_viewpoint1_z_angle = viewpoint1_z_angle;
+    prev_target_x = target_x;
+    prev_target_y = target_y;
+    prev_target_z = target_z;
+    CapturePreviousOpponentShadow();
 
     have_prev_car_state = true;
 }
 
-static void UpdateInterpolatedCarTransforms(float alpha) {
+static void UpdateInterpolatedCarTransforms(IDirect3DDevice9* pd3dDevice, float alpha) {
     if (!have_prev_car_state)
         CapturePreviousCarState();
 
@@ -764,6 +797,15 @@ static void UpdateInterpolatedCarTransforms(float alpha) {
         alpha = 0.0f;
     if (alpha > 1.0f)
         alpha = 1.0f;
+
+    const float backdropY = LerpLong(prev_viewpoint1_y, viewpoint1_y, alpha);
+    const float backdropXa = LerpWrappedAngleUnits(prev_viewpoint1_x_angle, viewpoint1_x_angle, alpha);
+    const float backdropYa = LerpWrappedAngleUnits(prev_viewpoint1_y_angle, viewpoint1_y_angle, alpha);
+    const float backdropZa = LerpWrappedAngleUnits(prev_viewpoint1_z_angle, viewpoint1_z_angle, alpha);
+    render_backdrop_viewpoint_y = static_cast<long>(backdropY);
+    render_backdrop_viewpoint_x_angle = static_cast<long>(backdropXa) & (MAX_ANGLE - 1);
+    render_backdrop_viewpoint_y_angle = static_cast<long>(backdropYa) & (MAX_ANGLE - 1);
+    render_backdrop_viewpoint_z_angle = static_cast<long>(backdropZa) & (MAX_ANGLE - 1);
 
     const float playerX = LerpFixedCoord(prev_player1_x, player1_x, alpha);
     const float playerY = LerpFixedCoord(prev_player1_y, player1_y, alpha);
@@ -776,14 +818,61 @@ static void UpdateInterpolatedCarTransforms(float alpha) {
     const float opponentX = LerpFixedCoord(prev_opponent_x, opponent_x, alpha);
     const float opponentY = LerpFixedCoord(prev_opponent_y, opponent_y, alpha);
     const float opponentZ = LerpFixedCoord(prev_opponent_z, opponent_z, alpha);
-    // Opponent angles come from terrain-derived instantaneous values and can wobble when
-    // interpolated as Euler angles. Keep orientation at current logic-tick value and
-    // interpolate translation only.
-    const float opponentXa = opponent_x_angle;
-    const float opponentYa = opponent_y_angle;
-    const float opponentZa = opponent_z_angle;
+    const float opponentXa = LerpWrappedRadians(prev_opponent_x_angle, opponent_x_angle, alpha);
+    const float opponentYa = LerpWrappedRadians(prev_opponent_y_angle, opponent_y_angle, alpha);
+    const float opponentZa = LerpWrappedRadians(prev_opponent_z_angle, opponent_z_angle, alpha);
     BuildCarWorldTransform(&matWorldOpponentsCar, opponentX, opponentY, opponentZ, opponentXa, opponentYa, opponentZa,
                            VCAR_HEIGHT / 4.0f);
+
+    D3DXMATRIX matRot, matTemp, matTrans, matView;
+    static D3DXVECTOR3 vUpVec(0.0f, 1.0f, 0.0f);
+    if (GameMode == GAME_IN_PROGRESS) {
+        const float viewX = LerpLong(prev_viewpoint1_x, viewpoint1_x, alpha);
+        const float viewY = LerpLong(prev_viewpoint1_y, viewpoint1_y, alpha) / static_cast<float>(1 << LOG_PRECISION);
+        const float viewZ = LerpLong(prev_viewpoint1_z, viewpoint1_z, alpha);
+
+        const float xaUnits = LerpWrappedAngleUnits(prev_viewpoint1_x_angle, viewpoint1_x_angle, alpha);
+        const float yaUnits = LerpWrappedAngleUnits(prev_viewpoint1_y_angle, viewpoint1_y_angle, alpha);
+        const float zaUnits = LerpWrappedAngleUnits(prev_viewpoint1_z_angle, viewpoint1_z_angle, alpha);
+        const float xa = ((-xaUnits) * 2.0f * D3DX_PI) / 65536.0f;
+        const float ya = ((-yaUnits) * 2.0f * D3DX_PI) / 65536.0f;
+        const float za = ((-zaUnits) * 2.0f * D3DX_PI) / 65536.0f;
+
+        D3DXMatrixTranslation(&matTrans, -viewX, viewY, -viewZ);
+        D3DXMatrixIdentity(&matRot);
+#ifdef linux
+        D3DXMatrixRotationY(&matTemp, ya + D3DX_PI);
+        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+        D3DXMatrixRotationX(&matTemp, -xa);
+        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+        D3DXMatrixRotationZ(&matTemp, -za);
+        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+#else
+        D3DXMatrixRotationY(&matTemp, ya);
+        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+        D3DXMatrixRotationX(&matTemp, xa);
+        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+        D3DXMatrixRotationZ(&matTemp, za);
+        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+#endif
+        D3DXMatrixMultiply(&matView, &matTrans, &matRot);
+#ifdef linux
+        D3DXMatrixScaling(&matTrans, +1, -1, +1);
+        D3DXMatrixMultiply(&matView, &matView, &matTrans);
+#endif
+        pd3dDevice->SetTransform(D3DTS_VIEW, &matView);
+    } else if (GameMode == TRACK_PREVIEW) {
+        const float viewX = LerpLong(prev_viewpoint1_x, viewpoint1_x, alpha);
+        const float viewY = -LerpLong(prev_viewpoint1_y, viewpoint1_y, alpha) / static_cast<float>(1 << LOG_PRECISION);
+        const float viewZ = LerpLong(prev_viewpoint1_z, viewpoint1_z, alpha);
+        const float lookX = LerpLong(prev_target_x, target_x, alpha);
+        const float lookY = LerpLong(prev_target_y, target_y, alpha);
+        const float lookZ = LerpLong(prev_target_z, target_z, alpha);
+        D3DXVECTOR3 vEyePt(viewX, viewY, viewZ);
+        D3DXVECTOR3 vLookatPt(lookX, lookY, lookZ);
+        D3DXMatrixLookAtLH(&matView, &vEyePt, &vLookatPt, &vUpVec);
+        pd3dDevice->SetTransform(D3DTS_VIEW, &matView);
+    }
 }
 
 static void SetCarWorldTransform(void) {
@@ -828,7 +917,7 @@ void CALLBACK OnFrameMove(IDirect3DDevice9* pd3dDevice, double fTime, float fEla
 
     if ((GameMode == TRACK_PREVIEW) || (GameMode == GAME_IN_PROGRESS)) {
         if (GameMode == GAME_IN_PROGRESS) {
-            // Fixed-step engine/audio update (50Hz logic tick).
+            // Fixed-step engine/audio update (base gameplay logic tick).
             if (!bPaused)
                 FramesWheelsEngine(EngineSoundBuffers);
         }
@@ -960,6 +1049,11 @@ void CALLBACK OnFrameMove(IDirect3DDevice9* pd3dDevice, double fTime, float fEla
 #endif
         pd3dDevice->SetTransform(D3DTS_VIEW, &matView);
     }
+
+    render_backdrop_viewpoint_y = viewpoint1_y;
+    render_backdrop_viewpoint_x_angle = viewpoint1_x_angle;
+    render_backdrop_viewpoint_y_angle = viewpoint1_y_angle;
+    render_backdrop_viewpoint_z_angle = viewpoint1_z_angle;
 
     if (!bPaused)
         bFrameMoved = TRUE;
@@ -1119,8 +1213,10 @@ void RenderText(double fTime) {
     if (bShowStats) {
         txtHelper.SetInsertionPos(static_cast<int>((2 + (wideScreen ? 10 : 0)) * textScale), 0);
         txtHelper.DrawFormattedTextLine(L"fTime: %0.1f  sin(fTime): %0.4f", fTime, sin(fTime));
-        txtHelper.DrawFormattedTextLine(L"Render FPS: %5.1f  Logic: %5.1f Hz  Tick#: %.0f", g_renderFpsDisplay,
-                                        g_logicTickRateDisplay, static_cast<double>(g_logicTickTotal));
+        txtHelper.DrawFormattedTextLine(L"Render FPS: %5.1f  Physics: %5.1f Hz  Logic: %4.2f Hz", g_renderFpsDisplay,
+                                        g_physicsTickRateDisplay, g_baseLogicTickRateDisplay);
+        txtHelper.DrawFormattedTextLine(L"Ticks  Physics: %.0f  Logic: %.0f", static_cast<double>(g_physicsTickTotal),
+                                        static_cast<double>(g_baseLogicTickTotal));
 
 #if defined(DEBUG) || defined(_DEBUG)
         // Output VALUE1, VALUE, VALUE3
@@ -1340,7 +1436,8 @@ void CALLBACK OnFrameRender(IDirect3DDevice9* pd3dDevice, double fTime, float fE
         pd3dDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
 
         // Draw Backdrop
-        DrawBackdrop(viewpoint1_y, viewpoint1_x_angle, viewpoint1_y_angle, viewpoint1_z_angle);
+        DrawBackdrop(render_backdrop_viewpoint_y, render_backdrop_viewpoint_x_angle, render_backdrop_viewpoint_y_angle,
+                     render_backdrop_viewpoint_z_angle);
 
         //        SetupLights(pd3dDevice);
 
@@ -1611,20 +1708,31 @@ static bool RunFrame(double frameTime, bool allowQuit) {
     g_logicAccumulator += frameDelta;
 
     bool anyLogicFrameMoved = false;
-    while (g_logicAccumulator >= LOGIC_STEP_SECONDS) {
-        CapturePreviousCarState();
-        OnFrameMove(&pd3dDevice, frameTime, static_cast<float>(LOGIC_STEP_SECONDS), NULL);
-        ++g_logicTicksInWindow;
-        ++g_logicTickTotal;
-        if (bFrameMoved)
-            anyLogicFrameMoved = true;
-        g_logicAccumulator -= LOGIC_STEP_SECONDS;
+    while (g_logicAccumulator >= PHYSICS_STEP_SECONDS) {
+        g_logicAccumulator -= PHYSICS_STEP_SECONDS;
+        ++g_physicsTicksInWindow;
+        ++g_physicsTickTotal;
+
+        ++g_baseLogicSubstepCounter;
+        if (g_baseLogicSubstepCounter >= PHYSICS_SUBSTEPS_PER_BASE_LOGIC) {
+            g_baseLogicSubstepCounter = 0;
+            CapturePreviousCarState();
+            OnFrameMove(&pd3dDevice, frameTime, static_cast<float>(BASE_LOGIC_STEP_SECONDS), NULL);
+            ++g_baseLogicTicksInWindow;
+            ++g_baseLogicTickTotal;
+            if (bFrameMoved)
+                anyLogicFrameMoved = true;
+        }
     }
     bFrameMoved = anyLogicFrameMoved;
 
     if ((GameMode == TRACK_PREVIEW) || (GameMode == GAME_IN_PROGRESS)) {
-        const float alpha = static_cast<float>(g_logicAccumulator / LOGIC_STEP_SECONDS);
-        UpdateInterpolatedCarTransforms(alpha);
+        const double substepFraction = g_logicAccumulator / PHYSICS_STEP_SECONDS;
+        const double baseProgress = (static_cast<double>(g_baseLogicSubstepCounter) + substepFraction) /
+                                    static_cast<double>(PHYSICS_SUBSTEPS_PER_BASE_LOGIC);
+        const float alpha = static_cast<float>(baseProgress);
+        UpdateInterpolatedCarTransforms(&pd3dDevice, alpha);
+        UpdateInterpolatedOpponentShadow(alpha);
     }
 
     RenderCurrentFrame(frameTime, static_cast<float>(frameDelta));
@@ -1633,9 +1741,11 @@ static bool RunFrame(double frameTime, bool allowQuit) {
     const double timingWindowElapsed = frameTime - g_timingWindowStart;
     if (timingWindowElapsed >= 0.5) {
         g_renderFpsDisplay = static_cast<double>(g_renderFramesInWindow) / timingWindowElapsed;
-        g_logicTickRateDisplay = static_cast<double>(g_logicTicksInWindow) / timingWindowElapsed;
+        g_physicsTickRateDisplay = static_cast<double>(g_physicsTicksInWindow) / timingWindowElapsed;
+        g_baseLogicTickRateDisplay = static_cast<double>(g_baseLogicTicksInWindow) / timingWindowElapsed;
         g_renderFramesInWindow = 0;
-        g_logicTicksInWindow = 0;
+        g_physicsTicksInWindow = 0;
+        g_baseLogicTicksInWindow = 0;
         g_timingWindowStart = frameTime;
     }
     return run;
@@ -1955,14 +2065,16 @@ int main(int argc, const char** argv) {
 #ifdef __EMSCRIPTEN__
     CapturePreviousCarState();
     g_lastFrameTime = GetTimeSeconds();
-    g_logicAccumulator = LOGIC_STEP_SECONDS;
+    g_logicAccumulator = BASE_LOGIC_STEP_SECONDS;
+    g_baseLogicSubstepCounter = 0;
     g_timingWindowStart = g_lastFrameTime;
     emscripten_set_main_loop(em_main_loop, 0, 1);
 #else
     bool run = true;
     CapturePreviousCarState();
     g_lastFrameTime = GetTimeSeconds();
-    g_logicAccumulator = LOGIC_STEP_SECONDS;
+    g_logicAccumulator = BASE_LOGIC_STEP_SECONDS;
+    g_baseLogicSubstepCounter = 0;
     g_timingWindowStart = g_lastFrameTime;
     while (run) {
         run = RunFrame(GetTimeSeconds(), true);
