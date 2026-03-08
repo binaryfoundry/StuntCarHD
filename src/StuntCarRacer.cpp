@@ -51,6 +51,7 @@ GameModeType GameMode = TRACK_MENU;
 // Both the following are used for keyboard input
 UINT keyPress = '\0';
 DWORD lastInput = 0;
+static DWORD g_keyboardInput = 0;
 
 static IDirectSound8* ds;
 IDirectSoundBuffer8* WreckSoundBuffer = NULL;
@@ -87,6 +88,20 @@ static int g_brakeSampleCount = 0;
 static int g_boostSampleCount = 0;
 static bool g_restartEngineAudioOnFirstInput = false;
 static float g_requestedScreenScale = 0.0f;
+
+#ifdef USE_SDL2
+#define MAX_LOCAL_PLAYERS 2
+#define GAMEPAD_STEER_DEADZONE 12000
+#define GAMEPAD_TRIGGER_THRESHOLD 16000
+
+typedef struct {
+    SDL_GameController* handle;
+    SDL_JoystickID instanceId;
+} GAMEPAD_SLOT;
+
+static GAMEPAD_SLOT g_gamepadSlots[MAX_LOCAL_PLAYERS];
+static DWORD g_gamepadInput[MAX_LOCAL_PLAYERS] = {0, 0};
+#endif
 
 bool bShowStats = FALSE;
 bool bNewGame = FALSE;
@@ -157,6 +172,17 @@ static long render_backdrop_viewpoint_z_angle = 0;
 
 static void ResetControlSamplingWindow(void);
 static void ApplyWindowLayout(int windowWidth, int windowHeight, bool logLayout);
+static void RefreshCombinedInput(void);
+
+#ifdef USE_SDL2
+static void ResetGamepadSlots(void);
+static void OpenInitialGamepads(void);
+static void HandleGamepadDeviceAdded(int deviceIndex);
+static void HandleGamepadDeviceRemoved(SDL_JoystickID instanceId);
+static DWORD BuildGamepadInputForPlayer(SDL_GameController* controller);
+static void RefreshGamepadInput(void);
+static void CloseAllGamepads(void);
+#endif
 
 /**************************************************************************
   DSInit
@@ -1180,6 +1206,8 @@ static void HandleTrackPreview(TextHelper& txtHelper) {
     txtHelper.DrawTextLine(
         L"  Arrow left = Steer left, Arrow right = Steer right, Space = Accelerate, Arrow Down = Brake");
 #endif
+    txtHelper.DrawTextLine(L"Gamepad controls :-");
+    txtHelper.DrawTextLine(L"  Left stick/D-Pad = Steer, RT = Accelerate, LT or B = Brake, A/X/RB = Boost");
     txtHelper.DrawTextLine(L"  R = Point car in opposite direction, P = Pause, O = Unpause");
     txtHelper.DrawTextLine(L"  M = Back to track menu, Escape = Quit");
 
@@ -1518,6 +1546,145 @@ void CALLBACK OnFrameRender(IDirect3DDevice9* pd3dDevice, double fTime, float fE
     }
 }
 
+#ifdef USE_SDL2
+static void ResetGamepadSlots(void) {
+    for (int i = 0; i < MAX_LOCAL_PLAYERS; ++i) {
+        g_gamepadSlots[i].handle = NULL;
+        g_gamepadSlots[i].instanceId = -1;
+        g_gamepadInput[i] = 0;
+    }
+}
+
+static int FindGamepadSlotByInstance(SDL_JoystickID instanceId) {
+    for (int i = 0; i < MAX_LOCAL_PLAYERS; ++i) {
+        if (g_gamepadSlots[i].handle && (g_gamepadSlots[i].instanceId == instanceId))
+            return i;
+    }
+    return -1;
+}
+
+static int FindFreeGamepadSlot(void) {
+    for (int i = 0; i < MAX_LOCAL_PLAYERS; ++i) {
+        if (g_gamepadSlots[i].handle == NULL)
+            return i;
+    }
+    return -1;
+}
+
+static DWORD BuildGamepadInputForPlayer(SDL_GameController* controller) {
+    DWORD input = 0;
+    if (controller == NULL)
+        return input;
+
+    const Sint16 steerX = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
+    const Sint16 leftTrigger = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
+    const Sint16 rightTrigger = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+
+    if ((steerX <= -GAMEPAD_STEER_DEADZONE) ||
+        (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_LEFT) != 0))
+        input |= KEY_P1_LEFT;
+
+    if ((steerX >= GAMEPAD_STEER_DEADZONE) ||
+        (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) != 0))
+        input |= KEY_P1_RIGHT;
+
+    if ((rightTrigger >= GAMEPAD_TRIGGER_THRESHOLD) ||
+        (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_UP) != 0))
+        input |= KEY_P1_ACCEL;
+
+    if ((leftTrigger >= GAMEPAD_TRIGGER_THRESHOLD) ||
+        (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_B) != 0) ||
+        (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_DOWN) != 0))
+        input |= KEY_P1_BRAKE;
+
+    if ((SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_A) != 0) ||
+        (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_X) != 0) ||
+        (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) != 0))
+        input |= KEY_P1_BOOST;
+
+    return input;
+}
+
+static void RefreshGamepadInput(void) {
+    for (int i = 0; i < MAX_LOCAL_PLAYERS; ++i) {
+        g_gamepadInput[i] = 0;
+        if (g_gamepadSlots[i].handle == NULL)
+            continue;
+        if (!SDL_GameControllerGetAttached(g_gamepadSlots[i].handle))
+            continue;
+        g_gamepadInput[i] = BuildGamepadInputForPlayer(g_gamepadSlots[i].handle);
+    }
+}
+
+static void RefreshCombinedInput(void) {
+    RefreshGamepadInput();
+    // Current gameplay consumes player 1 input; keep player-indexed slots for future 2P.
+    lastInput = g_keyboardInput | g_gamepadInput[0];
+}
+
+static void HandleGamepadDeviceAdded(int deviceIndex) {
+    if (!SDL_IsGameController(deviceIndex))
+        return;
+
+    const SDL_JoystickID instanceId = SDL_JoystickGetDeviceInstanceID(deviceIndex);
+    if (instanceId < 0)
+        return;
+
+    if (FindGamepadSlotByInstance(instanceId) >= 0)
+        return;
+
+    const int slot = FindFreeGamepadSlot();
+    if (slot < 0)
+        return;
+
+    SDL_GameController* controller = SDL_GameControllerOpen(deviceIndex);
+    if (controller == NULL) {
+        printf("SDL gamepad open failed for device %d: %s\n", deviceIndex, SDL_GetError());
+        return;
+    }
+
+    SDL_Joystick* joystick = SDL_GameControllerGetJoystick(controller);
+    g_gamepadSlots[slot].handle = controller;
+    g_gamepadSlots[slot].instanceId = SDL_JoystickInstanceID(joystick);
+
+    const char* name = SDL_GameControllerName(controller);
+    if (name == NULL)
+        name = "Unknown Controller";
+    printf("Gamepad P%d connected: %s\n", slot + 1, name);
+}
+
+static void HandleGamepadDeviceRemoved(SDL_JoystickID instanceId) {
+    const int slot = FindGamepadSlotByInstance(instanceId);
+    if (slot < 0)
+        return;
+
+    SDL_GameControllerClose(g_gamepadSlots[slot].handle);
+    g_gamepadSlots[slot].handle = NULL;
+    g_gamepadSlots[slot].instanceId = -1;
+    g_gamepadInput[slot] = 0;
+    printf("Gamepad P%d disconnected\n", slot + 1);
+}
+
+static void OpenInitialGamepads(void) {
+    const int numJoysticks = SDL_NumJoysticks();
+    for (int i = 0; i < numJoysticks; ++i)
+        HandleGamepadDeviceAdded(i);
+}
+
+static void CloseAllGamepads(void) {
+    for (int i = 0; i < MAX_LOCAL_PLAYERS; ++i) {
+        if (g_gamepadSlots[i].handle) {
+            SDL_GameControllerClose(g_gamepadSlots[i].handle);
+            g_gamepadSlots[i].handle = NULL;
+        }
+        g_gamepadSlots[i].instanceId = -1;
+        g_gamepadInput[i] = 0;
+    }
+}
+#else
+static void RefreshCombinedInput(void) { lastInput = g_keyboardInput; }
+#endif
+
 bool process_events() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -1618,11 +1785,11 @@ bool process_events() {
 
             // controls for Car Behaviour, Player 1
             case SDLK_LEFT:
-                lastInput |= KEY_P1_LEFT;
+                g_keyboardInput |= KEY_P1_LEFT;
                 break;
 
             case SDLK_RIGHT:
-                lastInput |= KEY_P1_RIGHT;
+                g_keyboardInput |= KEY_P1_RIGHT;
                 break;
 
 #if defined(PANDORA) || defined(PYRA)
@@ -1632,7 +1799,7 @@ bool process_events() {
             case SDLK_RSHIFT:
             case SDLK_LSHIFT:
 #endif
-                lastInput |= KEY_P1_BOOST;
+                g_keyboardInput |= KEY_P1_BOOST;
                 break;
 
 #if defined(PANDORA) || defined(PYRA)
@@ -1640,7 +1807,7 @@ bool process_events() {
 #else
             case SDLK_DOWN:
 #endif
-                lastInput |= KEY_P1_BRAKE;
+                g_keyboardInput |= KEY_P1_BRAKE;
                 break;
 
 #if defined(PANDORA) || defined(PYRA)
@@ -1648,7 +1815,7 @@ bool process_events() {
 #else
             case SDLK_UP:
 #endif
-                lastInput |= KEY_P1_ACCEL;
+                g_keyboardInput |= KEY_P1_ACCEL;
                 break;
 
             case SDLK_ESCAPE:
@@ -1660,11 +1827,11 @@ bool process_events() {
             switch (event.key.keysym.sym) {
             // controls for Car Behaviour, Player 1
             case SDLK_LEFT:
-                lastInput &= ~KEY_P1_LEFT;
+                g_keyboardInput &= ~KEY_P1_LEFT;
                 break;
 
             case SDLK_RIGHT:
-                lastInput &= ~KEY_P1_RIGHT;
+                g_keyboardInput &= ~KEY_P1_RIGHT;
                 break;
 
 #if defined(PANDORA) || defined(PYRA)
@@ -1674,7 +1841,7 @@ bool process_events() {
             case SDLK_RSHIFT:
             case SDLK_LSHIFT:
 #endif
-                lastInput &= ~KEY_P1_BOOST;
+                g_keyboardInput &= ~KEY_P1_BOOST;
                 break;
 
 #if defined(PANDORA) || defined(PYRA)
@@ -1682,7 +1849,7 @@ bool process_events() {
 #else
             case SDLK_DOWN:
 #endif
-                lastInput &= ~KEY_P1_BRAKE;
+                g_keyboardInput &= ~KEY_P1_BRAKE;
                 break;
 
 #if defined(PANDORA) || defined(PYRA)
@@ -1690,12 +1857,20 @@ bool process_events() {
 #else
             case SDLK_UP:
 #endif
-                lastInput &= ~KEY_P1_ACCEL;
+                g_keyboardInput &= ~KEY_P1_ACCEL;
                 break;
             }
             break;
         case SDL_QUIT:
             return false;
+#ifdef USE_SDL2
+        case SDL_CONTROLLERDEVICEADDED:
+            HandleGamepadDeviceAdded(event.cdevice.which);
+            break;
+        case SDL_CONTROLLERDEVICEREMOVED:
+            HandleGamepadDeviceRemoved(event.cdevice.which);
+            break;
+#endif
 #ifdef USE_SDL2
         case SDL_WINDOWEVENT:
             if ((event.window.event == SDL_WINDOWEVENT_RESIZED) || (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED))
@@ -1704,6 +1879,7 @@ bool process_events() {
 #endif
         }
     }
+    RefreshCombinedInput();
     return true;
 }
 
@@ -1928,7 +2104,7 @@ int main(int argc, const char** argv) {
     }
 #ifdef USE_SDL2
     SDL_GLContext context = NULL;
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK) == -1) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) == -1) {
         printf("Could not initialise SDL2: %s\n", SDL_GetError());
         exit(-1);
     }
@@ -1940,6 +2116,12 @@ int main(int argc, const char** argv) {
     }
 #endif
     atexit(SDL_Quit);
+
+#ifdef USE_SDL2
+    ResetGamepadSlots();
+    SDL_GameControllerEventState(SDL_ENABLE);
+    OpenInitialGamepads();
+#endif
 
     TTF_Init();
 
@@ -2182,6 +2364,7 @@ int main(int argc, const char** argv) {
     DSSetMode();
 
     glClearColor(0, 0, 0, 1);
+    RefreshCombinedInput();
     ResetFourteenFrameTiming();
 #ifdef __EMSCRIPTEN__
     CapturePreviousCarState();
@@ -2209,6 +2392,9 @@ int main(int argc, const char** argv) {
 
     CloseFonts();
 
+#ifdef USE_SDL2
+    CloseAllGamepads();
+#endif
     sound_destroy();
     TTF_Quit();
     SDL_Quit();
