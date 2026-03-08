@@ -147,6 +147,7 @@ static long player_x_speed = 0, player_y_speed = 0;
 static long accelerate, brake;
 
 static long accelerating = FALSE; // to remember previous control state
+extern long fourteen_frames_elapsed;
 
 long engine_power = 240;    // (240 standard, 320 super)
 long boost_unit_value = 16; // (16 standard, 12 super)
@@ -763,10 +764,14 @@ static void BoostPower(long boost_flag, long accel_flag, long brake_flag) {
     if ((!boost_flag) && (NOT_WRECKED)) {
         if (accelerating || (accel_flag || brake_flag)) {
             if (boostReserve > 0) {
-                --boostUnit;
-                if (boostUnit < 0) {
-                    boostUnit = boost_unit_value;
-                    --boostReserve;
+                // Match original timing gate: boost reserve only ticks down when
+                // fourteen_frames_elapsed is clear.
+                if (fourteen_frames_elapsed == 0) {
+                    --boostUnit;
+                    if (boostUnit < 0) {
+                        boostUnit = boost_unit_value;
+                        --boostReserve;
+                    }
                 }
 
                 boost_activated = 0x80;
@@ -1845,6 +1850,20 @@ long damaged_limit = 10; // Actually track/league dependant (could add to track 
 // NOTE: road_cushion_value is 0 for standard league and 1 for super league
 //         fourteen_frames_elapsed has value of 0 or -1 (set)
 long road_cushion_value = 0, fourteen_frames_elapsed = 0;
+static unsigned char fourteen_frame_accumulator = 0;
+
+void ResetFourteenFrameTiming(void) {
+    fourteen_frame_accumulator = 0;
+    fourteen_frames_elapsed = 0;
+}
+
+void AdvanceFourteenFrameTiming(void) {
+    // Assembly parity for display.lap.time:
+    // add.b #$EE,accumulator ; carry => fourteen_frames_elapsed = 0 else -1
+    const unsigned int sum = static_cast<unsigned int>(fourteen_frame_accumulator) + 0xeeu;
+    fourteen_frame_accumulator = static_cast<unsigned char>(sum & 0xffu);
+    fourteen_frames_elapsed = (sum > 0xffu) ? 0 : -1;
+}
 
 // following are only global due to use by two functions - could be passed in instead
 static long front_left_height_difference, front_right_height_difference, rear_height_difference;

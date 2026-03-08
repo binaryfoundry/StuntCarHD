@@ -54,6 +54,8 @@ extern void CalculatePlayersRoadPosition(void);
 
 extern void DrawOtherGraphics(void);
 extern void UpdateDamage(void);
+extern void ResetFourteenFrameTiming(void);
+extern void AdvanceFourteenFrameTiming(void);
 
 extern void ResetLapData(long car);
 extern void UpdateLapData(void);

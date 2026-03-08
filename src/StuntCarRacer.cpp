@@ -951,6 +951,11 @@ void CALLBACK OnFrameMove(IDirect3DDevice9* pd3dDevice, double fTime, float fEla
         LimitViewpointY(&player1_y);
     }
 
+    if ((GameMode == GAME_IN_PROGRESS) && (!bPaused)) {
+        UpdateLapData();
+        AdvanceFourteenFrameTiming();
+    }
+
     if ((GameMode == TRACK_MENU) || (GameMode == TRACK_PREVIEW)) {
         if (GameMode == TRACK_MENU)
             CalcTrackMenuViewpoint();
@@ -1166,6 +1171,7 @@ static void HandleTrackPreview(TextHelper& txtHelper) {
         bNewGame = TRUE;
         GameMode = GAME_IN_PROGRESS;
         // initialise game data
+        ResetFourteenFrameTiming();
         ResetLapData(OPPONENT);
         ResetLapData(PLAYER);
         gameStartTime = GetTimeSeconds();
@@ -1478,8 +1484,6 @@ void CALLBACK OnFrameRender(IDirect3DDevice9* pd3dDevice, double fTime, float fE
             //jsr    display.speed.bar
             if (bFrameMoved)
                 UpdateDamage();
-
-            UpdateLapData();
             //jsr    display.opponents.distance
         }
 
@@ -2063,6 +2067,7 @@ int main(int argc, const char** argv) {
     DSSetMode();
 
     glClearColor(0, 0, 0, 1);
+    ResetFourteenFrameTiming();
 #ifdef __EMSCRIPTEN__
     CapturePreviousCarState();
     g_lastFrameTime = GetTimeSeconds();

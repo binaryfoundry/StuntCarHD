@@ -1765,6 +1765,7 @@ static long draw_bridge_frame_count = 0;
 static long draw_bridge_y_list[NUM_DRAW_BRIDGE_Y_VALUES];
 
 extern long opponents_current_piece; // use as opponents_road_section
+extern long fourteen_frames_elapsed;
 
 extern unsigned char opponents_speed_values[NUM_TRACKS][MAX_PIECES_PER_TRACK];
 
@@ -1806,7 +1807,11 @@ on_draw_bridge: // player or opponent are on Draw Bridge section, or opponent is
     goto set_opponent_approach_speed;
 
 not_on_draw_bridge:            // neither player or opponent are on Draw Bridge section
-    draw_bridge_frame_count++; // draw bridge does move in this case
+    // Match original timing gate: only advance this counter when
+    // fourteen_frames_elapsed is clear.
+    // Keep menu/preview animation smooth by always advancing outside gameplay.
+    if ((GameMode != GAME_IN_PROGRESS) || (fourteen_frames_elapsed == 0))
+        draw_bridge_frame_count++;
     on_draw_bridge_offset = 0;
 
     // get height value between 0 and 15

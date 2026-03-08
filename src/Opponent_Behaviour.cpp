@@ -63,6 +63,7 @@ bool opponent_behind_player = FALSE;
 extern bool bSuperLeague;
 extern unsigned char sections_car_can_be_put_on[]; // both array are used for opponents speed values computation
 extern char Piece_Angle_And_Template[MAX_PIECES_PER_TRACK];
+extern long fourteen_frames_elapsed;
 
 // SEB: The opponents_speed_values, that is pre-computed, is not used anymore and Opponents_Speed_Value function is used now
 // Values for each piece of each track (Global because MoveDrawBridge() modifies the Draw Bridge values)
@@ -1308,7 +1309,7 @@ static void RandomizeOpponentsSteering(void) {
     if (GetRecordedAmigaWord(&opponentsID))
         ++VALUE2;
 
-    long temp, fourteen_frames_elapsed = 0;
+    long temp, amiga_fourteen_frames_elapsed = 0;
     if (GetRecordedAmigaWord(&temp)) {
         opp_touching_road = temp ? TRUE : FALSE;
     }
@@ -1321,7 +1322,9 @@ static void RandomizeOpponentsSteering(void) {
     if (GetRecordedAmigaWord(&temp))
         opponent_behind_player = temp & 0x80 ? TRUE : FALSE;
 
-    GetRecordedAmigaWord(&fourteen_frames_elapsed);
+    GetRecordedAmigaWord(&amiga_fourteen_frames_elapsed);
+    if (amiga_fourteen_frames_elapsed != fourteen_frames_elapsed)
+        ++VALUE1;
 #endif
 
     if (!opp_touching_road)
@@ -1334,9 +1337,7 @@ static void RandomizeOpponentsSteering(void) {
     if (!d0)
         goto ros1;
 
-#ifdef TEST_AMIGA_ROS
-    if (!fourteen_frames_elapsed)
-#endif
+    if (fourteen_frames_elapsed == 0)
         B1bbbe[2] -= 1;
 
     d0 += B1bbc2;
