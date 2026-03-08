@@ -78,6 +78,13 @@ static double g_renderFpsDisplay = 0.0;
 static double g_physicsTickRateDisplay = 0.0;
 static double g_baseLogicTickRateDisplay = 0.0;
 static int g_baseLogicSubstepCounter = 0;
+static DWORD g_logicInput = 0;
+static int g_controlSampleCount = 0;
+static int g_leftSampleCount = 0;
+static int g_rightSampleCount = 0;
+static int g_accelSampleCount = 0;
+static int g_brakeSampleCount = 0;
+static int g_boostSampleCount = 0;
 
 bool bShowStats = FALSE;
 bool bNewGame = FALSE;
@@ -145,6 +152,8 @@ static long render_backdrop_viewpoint_y = 0;
 static long render_backdrop_viewpoint_x_angle = 0;
 static long render_backdrop_viewpoint_y_angle = 0;
 static long render_backdrop_viewpoint_z_angle = 0;
+
+static void ResetControlSamplingWindow(void);
 
 /**************************************************************************
   DSInit
@@ -899,7 +908,7 @@ static void StopEngineSound(void) {
 
 void CALLBACK OnFrameMove(IDirect3DDevice9* pd3dDevice, double fTime, float fElapsedTime, void* pUserContext) {
     static D3DXVECTOR3 vUpVec(0.0f, 1.0f, 0.0f);
-    DWORD input = lastInput; // take copy of user input
+    DWORD input = (GameMode == GAME_IN_PROGRESS) ? g_logicInput : lastInput;
     D3DXMATRIX matRot, matTemp, matTrans, matView;
     bFrameMoved = FALSE;
 
@@ -1170,6 +1179,8 @@ static void HandleTrackPreview(TextHelper& txtHelper) {
     if (keyPress == STARTMENU) {
         bNewGame = TRUE;
         GameMode = GAME_IN_PROGRESS;
+        g_logicInput = lastInput;
+        ResetControlSamplingWindow();
         // initialise game data
         ResetFourteenFrameTiming();
         ResetLapData(OPPONENT);
@@ -1691,6 +1702,58 @@ static void RenderCurrentFrame(double frameTime, float frameDelta) {
 #endif
 }
 
+static void ResetControlSamplingWindow(void) {
+    g_controlSampleCount = 0;
+    g_leftSampleCount = 0;
+    g_rightSampleCount = 0;
+    g_accelSampleCount = 0;
+    g_brakeSampleCount = 0;
+    g_boostSampleCount = 0;
+}
+
+static void SampleControlsForLogicSubstep(DWORD input) {
+    ++g_controlSampleCount;
+    if (input & KEY_P1_LEFT)
+        ++g_leftSampleCount;
+    if (input & KEY_P1_RIGHT)
+        ++g_rightSampleCount;
+    if (input & KEY_P1_ACCEL)
+        ++g_accelSampleCount;
+    if (input & KEY_P1_BRAKE)
+        ++g_brakeSampleCount;
+    if (input & KEY_P1_BOOST)
+        ++g_boostSampleCount;
+}
+
+static DWORD BuildLogicInputFromSamples(DWORD latestInput) {
+    const int sampleCount = (g_controlSampleCount > 0) ? g_controlSampleCount : 1;
+    DWORD logicInput = 0;
+
+    // Steer according to dominant input over the 50Hz substeps.
+    if (g_leftSampleCount > g_rightSampleCount) {
+        logicInput |= KEY_P1_LEFT;
+    } else if (g_rightSampleCount > g_leftSampleCount) {
+        logicInput |= KEY_P1_RIGHT;
+    }
+
+    // Keep brake precedence (matches existing CarControl behavior when both are active).
+    if (g_brakeSampleCount > g_accelSampleCount) {
+        logicInput |= KEY_P1_BRAKE;
+    } else if (g_accelSampleCount > g_brakeSampleCount) {
+        logicInput |= KEY_P1_ACCEL;
+    } else if ((latestInput & KEY_P1_BRAKE) != 0) {
+        logicInput |= KEY_P1_BRAKE;
+    } else if ((latestInput & KEY_P1_ACCEL) != 0) {
+        logicInput |= KEY_P1_ACCEL;
+    }
+
+    // Boost if held for at least half the substeps in this logic window.
+    if ((g_boostSampleCount * 2) >= sampleCount)
+        logicInput |= KEY_P1_BOOST;
+
+    return logicInput;
+}
+
 static bool RunFrame(double frameTime, bool allowQuit) {
     bool run = true;
     if (allowQuit)
@@ -1716,10 +1779,13 @@ static bool RunFrame(double frameTime, bool allowQuit) {
         g_logicAccumulator -= PHYSICS_STEP_SECONDS;
         ++g_physicsTicksInWindow;
         ++g_physicsTickTotal;
+        SampleControlsForLogicSubstep(lastInput);
 
         ++g_baseLogicSubstepCounter;
         if (g_baseLogicSubstepCounter >= PHYSICS_SUBSTEPS_PER_BASE_LOGIC) {
             g_baseLogicSubstepCounter = 0;
+            g_logicInput = BuildLogicInputFromSamples(lastInput);
+            ResetControlSamplingWindow();
             CapturePreviousCarState();
             OnFrameMove(&pd3dDevice, frameTime, static_cast<float>(BASE_LOGIC_STEP_SECONDS), NULL);
             ++g_baseLogicTicksInWindow;
@@ -2073,6 +2139,8 @@ int main(int argc, const char** argv) {
     g_lastFrameTime = GetTimeSeconds();
     g_logicAccumulator = BASE_LOGIC_STEP_SECONDS;
     g_baseLogicSubstepCounter = 0;
+    g_logicInput = lastInput;
+    ResetControlSamplingWindow();
     g_timingWindowStart = g_lastFrameTime;
     emscripten_set_main_loop(em_main_loop, 0, 1);
 #else
@@ -2081,6 +2149,8 @@ int main(int argc, const char** argv) {
     g_lastFrameTime = GetTimeSeconds();
     g_logicAccumulator = BASE_LOGIC_STEP_SECONDS;
     g_baseLogicSubstepCounter = 0;
+    g_logicInput = lastInput;
+    ResetControlSamplingWindow();
     g_timingWindowStart = g_lastFrameTime;
     while (run) {
         run = RunFrame(GetTimeSeconds(), true);
