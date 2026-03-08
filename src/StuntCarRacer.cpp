@@ -86,6 +86,7 @@ static int g_accelSampleCount = 0;
 static int g_brakeSampleCount = 0;
 static int g_boostSampleCount = 0;
 static bool g_restartEngineAudioOnFirstInput = false;
+static float g_requestedScreenScale = 0.0f;
 
 bool bShowStats = FALSE;
 bool bNewGame = FALSE;
@@ -155,6 +156,7 @@ static long render_backdrop_viewpoint_y_angle = 0;
 static long render_backdrop_viewpoint_z_angle = 0;
 
 static void ResetControlSamplingWindow(void);
+static void ApplyWindowLayout(int windowWidth, int windowHeight, bool logLayout);
 
 /**************************************************************************
   DSInit
@@ -1694,6 +1696,12 @@ bool process_events() {
             break;
         case SDL_QUIT:
             return false;
+#ifdef USE_SDL2
+        case SDL_WINDOWEVENT:
+            if ((event.window.event == SDL_WINDOWEVENT_RESIZED) || (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED))
+                ApplyWindowLayout(event.window.data1, event.window.data2, false);
+            break;
+#endif
         }
     }
     return true;
@@ -1703,6 +1711,50 @@ IDirect3DDevice9 pd3dDevice;
 #ifdef USE_SDL2
 SDL_Window* window = NULL;
 #endif
+
+static void ApplyWindowLayout(int windowWidth, int windowHeight, bool logLayout) {
+    if ((windowWidth <= 0) || (windowHeight <= 0))
+        return;
+
+    float screenScale = g_requestedScreenScale;
+    if (screenScale <= 0.0f) {
+        float scaleX = static_cast<float>(windowWidth) / 640.0f;
+        float scaleY = static_cast<float>(windowHeight) / 480.0f;
+        screenScale = (scaleX < scaleY) ? scaleX : scaleY;
+    }
+    if (screenScale <= 0.0f)
+        screenScale = 1.0f;
+
+    wideScreen = (((static_cast<float>(windowWidth) / screenScale) - 640.0f) >= 80.0f) ? 1 : 0;
+
+    const float virtualWidth = wideScreen ? 800.0f : 640.0f;
+    const float virtualHeight = 480.0f;
+    int viewportW = static_cast<int>(virtualWidth * screenScale);
+    int viewportH = static_cast<int>(virtualHeight * screenScale);
+    if (viewportW < 1)
+        viewportW = 1;
+    if (viewportH < 1)
+        viewportH = 1;
+    int viewportX = (windowWidth - viewportW) / 2;
+    int viewportY = (windowHeight - viewportH) / 2;
+
+    glViewport(viewportX, viewportY, viewportW, viewportH);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, virtualWidth, virtualHeight, 0, 0, FURTHEST_Z);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    D3DXMATRIX matProj;
+    FLOAT fAspect = virtualWidth / virtualHeight;
+    D3DXMatrixPerspectiveFovLH(&matProj, D3DX_PI / 4, fAspect, 0.5f, FURTHEST_Z);
+    pd3dDevice.SetTransform(D3DTS_PROJECTION, &matProj);
+
+    if (logLayout) {
+        printf("Display mode: %s, Scale: %.2f, Viewport: %dx%d @ (%d,%d)\n", wideScreen ? "Widescreen" : "Standard",
+               screenScale, viewportW, viewportH, viewportX, viewportY);
+    }
+}
 
 static void RenderCurrentFrame(double frameTime, float frameDelta) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1974,9 +2026,9 @@ int main(int argc, const char** argv) {
 #endif
     int flags = 0;
     wideScreen = 0;
-    int screenH, screenW, screenX, screenY;
+    int screenH, screenW;
 #ifdef USE_SDL2
-    flags = SDL_WINDOW_OPENGL;
+    flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
 #else
     flags = SDL_OPENGL | SDL_DOUBLEBUF;
 #endif
@@ -2027,8 +2079,8 @@ int main(int argc, const char** argv) {
                 screenH = customHeight > 0 ? customHeight : 480;
             }
         } else {
-            screenW = customWidth > 0 ? customWidth : 800;
-            screenH = customHeight > 0 ? customHeight : 480;
+            screenW = customWidth > 0 ? customWidth : 1920;
+            screenH = customHeight > 0 ? customHeight : 1080;
         }
 #endif
 #ifdef USE_SDL2
@@ -2095,49 +2147,16 @@ int main(int argc, const char** argv) {
     }
     SDL_WM_SetCaption(maintitle, NULL);
 #endif
-    // automatic guess the scale or use custom scale
-    float screenScale = 1.;
-    if (customScale > 0.0f) {
-        // Use custom scale factor
-        screenScale = customScale;
-    } else {
-        // Automatic scaling based on window size
-        if (screenW / 640. < screenH / 480.)
-            screenScale = screenW / 640.;
-        else
-            screenScale = screenH / 480.;
-    }
-    // is it a Wide screen ratio?
-    // Detect widescreen if width is significantly wider than 4:3 aspect ratio
-    if ((screenW / screenScale - 640) >= 80)
-        wideScreen = 1;
-    screenX = (screenW - (wideScreen ? 800. : 640.) * screenScale) / 2.;
-    screenY = (screenH - 480. * screenScale) / 2.;
-    screenW = (wideScreen ? 800 : 640) * screenScale;
-    screenH = 480 * screenScale;
-    printf("Display mode: %s, Scale: %.2f, Resolution: %dx%d\n", wideScreen ? "Widescreen" : "Standard", screenScale,
-           screenW, screenH);
+    g_requestedScreenScale = customScale;
 #ifdef USE_SDL2
     if (flags & SDL_WINDOW_FULLSCREEN || flags & SDL_WINDOW_FULLSCREEN_DESKTOP)
 #else
     if (flags & SDL_FULLSCREEN)
 #endif
         SDL_ShowCursor(SDL_DISABLE);
-    glViewport(screenX, screenY, screenW, screenH);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    screenH = 480;
-    screenW = wideScreen ? 800 : 640;
-    glOrtho(0, screenW, screenH, 0, 0, FURTHEST_Z);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+    ApplyWindowLayout(screenW, screenH, true);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    D3DXMATRIX matProj;
-    FLOAT fAspect = screenW / 480.0f;
-    D3DXMatrixPerspectiveFovLH(&matProj, D3DX_PI / 4, fAspect, 0.5f, FURTHEST_Z);
-    pd3dDevice.SetTransform(D3DTS_PROJECTION, &matProj);
 
     glEnable(GL_DEPTH_TEST);
     glAlphaFunc(GL_NOTEQUAL, 0);
