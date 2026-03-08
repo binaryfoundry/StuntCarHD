@@ -113,6 +113,13 @@ bool sound_init(void) {
         return true;
     }
 
+    if ((SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO) == 0) {
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+            printf("SDL audio subsystem init failed: %s\n", SDL_GetError());
+            return false;
+        }
+    }
+
     SDL_AudioSpec desired = {};
     desired.freq = 44100;
     desired.format = AUDIO_F32SYS;

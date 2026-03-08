@@ -1846,13 +1846,13 @@ int main(int argc, const char** argv) {
     }
 #ifdef USE_SDL2
     SDL_GLContext context = NULL;
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK) == -1) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK) == -1) {
         printf("Could not initialise SDL2: %s\n", SDL_GetError());
         exit(-1);
     }
 #else
     SDL_Surface* screen = NULL;
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTTHREAD) == -1) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK | SDL_INIT_EVENTTHREAD) == -1) {
         printf("Could not initialise SDL: %s\n", SDL_GetError());
         exit(-1);
     }
