@@ -1,79 +1,79 @@
 # stuntcarremake
 
-[![stuntcarremake Linux build status](https://travis-ci.org/ptitSeb/stuntcarremake.svg?branch=master)](https://travis-ci.org/ptitSeb/stuntcarremake "stuntcarremake Linux build status") [![stuntcarremake Windows build status](https://ci.appveyor.com/api/projects/status/3b9bd69a4vsy0eu6/branch/master?svg=true)](https://ci.appveyor.com/project/ptitSeb/stuntcarremake/branch/master "stuntcarremake Windows Build status")
+This is a modernized SDL/OpenGL port of *Stunt Car Racer Remake*.
 
-This is a port to Linux & OpenPandora of Stunt Car Racer Remake, a windows remake of the old Stunt Car Racer from the AtariST/Amiga time.
+## Current Project Layout
 
-## Building
+- `src/` - game and platform source code
+- `data/` - runtime assets (tracks, sounds, bitmaps, font)
+- `build/` - out-of-source native build directory
+- `build-web/` - out-of-source Emscripten build directory (recommended)
 
-This project now uses CMake and an out-of-source build in `build/`.
-Rendering is SDL2 + OpenGL on desktop and web (Emscripten), with SDL audio.
+## Build System
 
-### Desktop (Linux/Windows/macOS with SDL2)
+The project is CMake-only now (no checked-in Visual Studio project files).
+
+Desktop/native rendering and audio use SDL2 + OpenGL + SDL_ttf.
+Web builds use Emscripten SDL ports.
+
+## Native Build (Windows/Linux/macOS)
 
 ```bash
 cmake -S . -B build
-cmake --build build -j
+cmake --build build
 ```
 
-Native desktop builds fetch SDL2, SDL2_ttf and glm directly from source via CMake `FetchContent`.
-You only need:
-- CMake
-- a C++ compiler toolchain
-- OpenGL development headers/libraries
-- internet access on first configure
-
-### Windows (Visual Studio Generator)
+Windows Release:
 
 ```powershell
 cmake -S . -B build
 cmake --build build --config Release
 ```
 
-### Web (Emscripten)
+### Native Dependencies
+
+By default (`STUNT_FETCH_NATIVE_DEPS=ON`), CMake fetches and builds:
+
+- SDL2
+- SDL2_ttf
+- glm
+
+This avoids manual binary linking.
+
+## Runtime Assets (`data/`)
+
+All runtime assets are expected under `data/`.
+
+For native builds, CMake copies `data/` automatically:
+
+- to `build/data`
+- and next to the executable (for example `build/Release/data`)
+
+So running from the build tree works without manual copying.
+
+## Web Build (Emscripten)
 
 ```bash
 emcmake cmake -S . -B build-web
-cmake --build build-web -j
+cmake --build build-web
 ```
 
-Web builds use Emscripten SDL ports (`-s USE_SDL=2 -s USE_SDL_TTF=2`) and do not fetch SDL dependencies from source.
+Web builds:
 
-You can play Emscripten version, built using [gl4es](https://github.com/ptitSeb/gl4es) here: [Web version](http://ptitseb.github.io/stuntcarremake/)
-
-Some of the original sound-loading code came from Forsaken/ProjectX port work by chino.
-
-## Display Features 
-
-The SDL desktop build supports:
-
-### Dynamic Window Resizing
-- **Resizable window** with automatic aspect ratio preservation (16:10 for widescreen, 4:3 for standard)
-- **Dynamic font scaling** - fonts and UI text scale based on window size
-- **Dynamic cockpit scaling** - cockpit overlay scales proportionally with window resolution
-- **Intelligent positioning** - UI elements maintain proper positioning at any resolution
-
-**Technical Details:**
-- Base resolutions: 800x480 (widescreen) or 640x480 (standard)
-- All scaling factors calculated dynamically from current vs base resolution
-
-**Contributors:** Dynamic scaling enhancements by omenoid <akaunist@gmail.com> (2025-11-30)
+- use `-s USE_SDL=2 -s USE_SDL_TTF=2`
+- do not FetchContent SDL dependencies from source
+- preload `data/Tracks`, `data/Sounds`, and `data/Bitmap`
+- embed `data/DejaVuSans-Bold.ttf`
 
 ## Controls
 
-Controls are:
-On Linux / Windows
- 4 Arrows for Turning / Accelerate / Brake
- Space for Boost
+Linux/Windows:
 
-On Pandora
- DPad Left/Right for turning
- (X) Accelerate
- (B) Brake
- (R) Boost
+- Arrow keys: steer / accelerate / brake
+- Space: boost
 
-[![Play on Youtube](https://img.youtube.com/vi/qKTFntQtG6E/0.jpg)](https://www.youtube.com/watch?v=qKTFntQtG6E)
+## Notes
 
-Here is a video on StuntCarRemake running on the OpenPandora
-
-Original project is here: http://sourceforge.net/projects/stuntcarremake/
+- Original project: http://sourceforge.net/projects/stuntcarremake/
+- Forked from: https://github.com/ptitSeb/stuntcarremake
+- Some original sound-loading code came from Forsaken/ProjectX port work by chino.
