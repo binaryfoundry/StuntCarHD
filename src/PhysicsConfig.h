@@ -32,17 +32,17 @@
  *   force = (velocity_term * SPRING >> 8) + penetration_depth
  * where velocity_term = (current_penetration - last_penetration).
  *
- * SPRING  controls the damping / velocity feedback gain.
+ * SPRING  is in reference-tick units (tuned for PHYSICS_REFERENCE_STEP_SECONDS).
+ *           Effective per-step spring is computed as spring * (dt_ref/dt) in code.
  *           Raise to make the front end return to road height faster / stiffer.
- *           Lower for a softer, floatier front.
- *           256 = neutral (no velocity boost); original shared value = 276.
+ *           256 = neutral; original shared value = 276.
  *
  * DAMPING controls how much of the spring force is fed into the final
  *           response on top of the raw penetration depth.
  *           Raise to increase stiffness; lower to soften.
  *           256 = scale factor of 1.0 (pass through unchanged).
  * ============================================================================ */
-#define FRONT_SUSPENSION_SPRING   1932   /* velocity gain (276/256 ≈ 1.08)  */
+#define FRONT_SUSPENSION_SPRING   276   /* velocity gain (reference-tick units, scaled by dt_ref/dt) */
 #define FRONT_SUSPENSION_DAMPING  256   /* penetration scale (256/256 = 1.0) */
 
 /* ============================================================================
@@ -50,7 +50,7 @@
  *
  * Same formula as front; independent values let you tune rear separately.
  * ============================================================================ */
-#define REAR_SUSPENSION_SPRING    1932   /* velocity gain (276/256 ≈ 1.08)  */
+#define REAR_SUSPENSION_SPRING    276   /* velocity gain (reference-tick units, scaled by dt_ref/dt) */
 #define REAR_SUSPENSION_DAMPING   256   /* penetration scale (256/256 = 1.0) */
 
 /* ============================================================================

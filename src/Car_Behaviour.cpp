@@ -1870,6 +1870,11 @@ static void CalculateWheelCollision(long road_height, long actual_height, long* 
     long amount_below_road, old_amount_below_road;
     long damage;
 
+    /* Spring is in reference-tick units; velocity term has dt baked in, so scale for current step. */
+    const long spring_effective = (g_physicsStepScale > 0.0f)
+        ? (long)((float)spring / g_physicsStepScale)
+        : spring;
+
     *height_difference_out = road_height - actual_height - wreck_wheel_height_reduction;
 
     new_difference = *height_difference_out;
@@ -1881,7 +1886,7 @@ static void CalculateWheelCollision(long road_height, long actual_height, long* 
     amount_below_road = new_difference - *old_difference_in_out;
     /* spring scales the velocity term (rate of penetration change = damping feedback);
        damping scales the position term (current penetration depth = spring stiffness). */
-    amount_below_road = ((amount_below_road * spring) >> 8) + ((new_difference * damping) >> 8);
+    amount_below_road = ((amount_below_road * spring_effective) >> 8) + ((new_difference * damping) >> 8);
 
     if (amount_below_road >= 0) {
         old_amount_below_road = *amount_below_road_in_out;
