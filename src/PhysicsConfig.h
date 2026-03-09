@@ -7,7 +7,7 @@
  * PHYSICS_UPDATE_HZ controls how many times per second the body-dynamics
  * integrator (CarBehaviour / OpponentBehaviour) is stepped.  This is
  * independent of the game-logic tick rate (~7.14 Hz).
- * Default: 50 Hz  ->  20 ms integration step.  Change this define and rebuild.
+ * Default: 60 Hz  ->  ~16.67 ms integration step.  Change this define and rebuild.
  *
  * The physics engine uses fixed-point integers, so parameters are integer
  * multipliers rather than physical Hz / ratios. The comments show what each
@@ -62,8 +62,7 @@
  *                         Raise for a harder shove; lower for a softer nudge.
  *
  * WALL_CONTACT_DAMPING  - right-shift applied to the vertical (Y) impulse
- *                         transferred between cars on contact.
- *                         Original = 4  (i.e. impulse >> 4, so ~6% transfer).
+ *                         transferred between cars on contact (e.g. 7 => impulse >> 7).
  *                         Lower shift = more vertical bounce on contact;
  *                         higher shift = less.
  * ============================================================================ */
