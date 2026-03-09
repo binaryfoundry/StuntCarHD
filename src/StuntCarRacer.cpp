@@ -1095,50 +1095,38 @@ void CALLBACK OnFrameMove(RenderDevice* pDevice, double fTime, float fElapsedTim
 /*                                                                                            */
 /*    Description:    Output track menu text                                                    */
 /*    ======================================================================================= */
-#ifdef linux
-#define FIRSTMENU SDLK_1
-#define STARTMENU SDLK_s
+#define STARTMENU SDLK_RETURN
 #define LEAGUEMENU SDLK_l
-#else
-#define FIRSTMENU '1'
-#define STARTMENU 'S'
-#define LEAGUEMENU 'L'
-#endif
 
 static void HandleTrackMenu(TextHelper& txtHelper) {
-    long i, track_number;
-    UINT firstMenuOption, lastMenuOption;
+    long track_number;
     float textScale = GetTextScale();
+    const SurfaceDesc* pd3dsdBackBuffer = GetBackBufferSurfaceDesc();
+
     txtHelper.SetInsertionPos(static_cast<int>((2 + (wideScreen ? 10 : 0)) * textScale),
                               static_cast<int>(15 * 8 * textScale));
-    txtHelper.DrawTextLine(L"Choose track :-");
-
-    for (i = 0, firstMenuOption = FIRSTMENU; i < NUM_TRACKS; i++) {
-        std::wstringstream ss;
-        ss << L"'"<< (i + 1) << L"' - " << GetTrackName(i);
-        txtHelper.DrawFormattedTextLine(ss.str());
-    }
-    lastMenuOption = i + FIRSTMENU - 1;
-
-    // output instructions
-    const SurfaceDesc* pd3dsdBackBuffer = GetBackBufferSurfaceDesc();
-    txtHelper.SetInsertionPos(static_cast<int>((2 + (wideScreen ? 10 : 0)) * textScale),
-                              static_cast<int>(pd3dsdBackBuffer->Height - 15 * 8 * textScale));
     {
         std::wstringstream ss;
-        ss << L"Current track - " << (TrackID == NO_TRACK ? L"None" : GetTrackName(TrackID))
-           << L".  Press 'S' to select, Escape to quit";
+        ss << L"Track: " << (TrackID == NO_TRACK ? L"None" : GetTrackName(TrackID));
         txtHelper.DrawFormattedTextLine(ss.str());
     }
+    txtHelper.SetInsertionPos(static_cast<int>((2 + (wideScreen ? 10 : 0)) * textScale),
+                              static_cast<int>(pd3dsdBackBuffer->Height - 15 * 8 * textScale));
+    txtHelper.DrawTextLine(L"Left/Right or D-pad = change track.  Enter or A = select.  Escape or B = quit.");
     txtHelper.DrawTextLine(L"'L' to switch Super League On/Off");
 
-    if (((keyPress >= firstMenuOption) && (keyPress <= lastMenuOption)) || (keyPress == LEAGUEMENU)) {
+    const bool goPrev = (keyPress == SDLK_LEFT);
+    const bool goNext = (keyPress == SDLK_RIGHT);
+    if (goPrev || goNext || (keyPress == LEAGUEMENU)) {
         if (keyPress == LEAGUEMENU) {
             bSuperLeague = !bSuperLeague;
             track_number = TrackID;
             CreateCarVertexBuffer(GetRenderDevice()); // recreate car
-        } else
-            track_number = keyPress - firstMenuOption; // start at 0
+        } else {
+            track_number = goNext
+                ? ((TrackID == NO_TRACK) ? 0 : (TrackID + 1) % NUM_TRACKS)
+                : ((TrackID == NO_TRACK) ? (long)(NUM_TRACKS - 1) : (TrackID + NUM_TRACKS - 1) % NUM_TRACKS);
+        }
 
         if (!ConvertAmigaTrack(track_number)) {
 #if defined(DEBUG) || defined(_DEBUG)
@@ -1193,10 +1181,10 @@ static void HandleTrackPreview(TextHelper& txtHelper) {
     {
         std::wstringstream ss;
         ss << L"Selected track - " << (TrackID == NO_TRACK ? L"None" : GetTrackName(TrackID))
-           << L".  Press 'S' to start game";
+           << L".  Press Enter or A to start game";
         txtHelper.DrawFormattedTextLine(ss.str());
     }
-    txtHelper.DrawTextLine(L"'M' for track menu, Escape to quit");
+    txtHelper.DrawTextLine(L"'M', B or Escape = back to track menu");
     txtHelper.DrawTextLine(L"(Press F4 to change scenery)");
 
     txtHelper.SetInsertionPos(static_cast<int>((2 + (wideScreen ? 10 : 0)) * textScale),
@@ -1211,7 +1199,7 @@ static void HandleTrackPreview(TextHelper& txtHelper) {
     txtHelper.DrawTextLine(L"Gamepad controls :-");
     txtHelper.DrawTextLine(L"  Left stick/D-Pad = Steer, RT = Accelerate, LT or B = Brake, A/X/RB = Boost");
     txtHelper.DrawTextLine(L"  R = Point car in opposite direction, P = Pause, O = Unpause");
-    txtHelper.DrawTextLine(L"  M = Back to track menu, Escape = Quit");
+    txtHelper.DrawTextLine(L"  M, B or Escape = Back to track menu");
 
     if (keyPress == STARTMENU) {
         RestartEngineAudioBuffers(true);
@@ -1394,11 +1382,11 @@ void RenderText(double fTime) {
                 txtHelperLarge.DrawTextLine(L"GAME OVER");
                 txtHelperLarge.SetInsertionPos(static_cast<int>((132 + (wideScreen ? 80 : 0)) * textScale),
                                                static_cast<int>(pd3dsdBackBuffer->Height - 25 * 11 * textScale));
-                txtHelperLarge.DrawTextLine(L"Press 'M' for track menu");
+                txtHelperLarge.DrawTextLine(L"Press 'M' or A for track menu");
 #else
                 txtHelperLarge.SetInsertionPos(static_cast<int>((124 + (wideScreen ? 80 : 0)) * textScale),
                                                static_cast<int>(pd3dsdBackBuffer->Height - 25 * 12 * textScale));
-                txtHelperLarge.DrawTextLine(L"GAME OVER: Press 'M' for track menu");
+                txtHelperLarge.DrawTextLine(L"GAME OVER: Press 'M' or A for track menu");
 #endif
             } else {
                 long intTime = static_cast<long>(diffTime);
@@ -1735,13 +1723,15 @@ bool process_events() {
                 bNewGame = TRUE; // for testing to try stopping car positioning bug
                 break;
 
-            // controls for Car Behaviour, Player 1
+            // controls for Car Behaviour, Player 1 (Left/Right = track change when in track menu)
             case SDLK_LEFT:
-                g_keyboardInput |= KEY_P1_LEFT;
+                if (GameMode != TRACK_MENU)
+                    g_keyboardInput |= KEY_P1_LEFT;
                 break;
 
             case SDLK_RIGHT:
-                g_keyboardInput |= KEY_P1_RIGHT;
+                if (GameMode != TRACK_MENU)
+                    g_keyboardInput |= KEY_P1_RIGHT;
                 break;
 
 #if defined(PANDORA) || defined(PYRA)
@@ -1771,7 +1761,15 @@ bool process_events() {
                 break;
 
             case SDLK_ESCAPE:
-                return false;
+                if (GameMode == TRACK_MENU)
+                    return false; /* quit only on main menu */
+                if (GameMode == TRACK_PREVIEW || GameMode == GAME_OVER || GameMode == GAME_IN_PROGRESS) {
+                    GameMode = TRACK_MENU;
+                    g_restartEngineAudioOnFirstInput = false;
+                    opponentsID = NO_OPPONENT;
+                    ResetDrawBridge();
+                }
+                break;
             }
             break;
         case SDL_KEYUP:
@@ -1822,6 +1820,45 @@ bool process_events() {
         case SDL_CONTROLLERDEVICEREMOVED:
             HandleGamepadDeviceRemoved(event.cdevice.which);
             break;
+        case SDL_CONTROLLERBUTTONDOWN: {
+            const Uint8 btn = event.cbutton.button;
+            const bool inMenu = (GameMode == TRACK_MENU || GameMode == TRACK_PREVIEW || GameMode == GAME_OVER);
+            /* B or Select (Back) = back to menu during race */
+            if ((btn == SDL_CONTROLLER_BUTTON_B || btn == SDL_CONTROLLER_BUTTON_BACK) && GameMode == GAME_IN_PROGRESS) {
+                GameMode = TRACK_MENU;
+                g_restartEngineAudioOnFirstInput = false;
+                opponentsID = NO_OPPONENT;
+                ResetDrawBridge();
+                break;
+            }
+            if (inMenu) {
+                if (btn == SDL_CONTROLLER_BUTTON_A) {
+                    /* A = Confirm / Next (Xbox standard) */
+                    if (GameMode == GAME_OVER) {
+                        GameMode = TRACK_MENU;
+                        g_restartEngineAudioOnFirstInput = false;
+                        opponentsID = NO_OPPONENT;
+                        ResetDrawBridge();
+                    } else
+                        keyPress = SDLK_RETURN;
+                } else if (btn == SDL_CONTROLLER_BUTTON_B || btn == SDL_CONTROLLER_BUTTON_BACK) {
+                    /* B or Select (Back) = Back (Xbox standard) - perform same action as M key */
+                    if (GameMode == TRACK_MENU)
+                        return false; /* quit */
+                    if (GameMode == TRACK_PREVIEW || GameMode == GAME_OVER) {
+                        GameMode = TRACK_MENU;
+                        g_restartEngineAudioOnFirstInput = false;
+                        opponentsID = NO_OPPONENT;
+                        ResetDrawBridge();
+                    }
+                } else if ((GameMode == TRACK_MENU) && (btn == SDL_CONTROLLER_BUTTON_DPAD_LEFT)) {
+                    keyPress = SDLK_LEFT;  /* previous track */
+                } else if ((GameMode == TRACK_MENU) && (btn == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) {
+                    keyPress = SDLK_RIGHT; /* next track */
+                }
+            }
+            break;
+        }
 #endif
 #ifdef USE_SDL2
         case SDL_WINDOWEVENT:
@@ -1973,6 +2010,15 @@ static bool RunFrame(double frameTime, bool allowQuit) {
         g_logicAccumulator = maxAccumulator;
     if (g_logicTickAccumulator > 2.0 * g_logicTickInterval)
         g_logicTickAccumulator = g_logicTickInterval;
+
+    /* Reset interpolation when menu/game mode changes so we don't lerp from stale state. */
+    {
+        static GameModeType s_prevGameMode = TRACK_MENU;
+        if (GameMode != s_prevGameMode) {
+            have_prev_car_state = false;
+            s_prevGameMode = GameMode;
+        }
+    }
 
     bool anyLogicFrameMoved = false;
     int stepsThisFrame = 0;
