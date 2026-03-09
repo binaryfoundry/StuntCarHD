@@ -2327,6 +2327,8 @@ static void CalculateSteeringAcceleration(long steering_amount) {
 static void AlignCarWithRoad(void) {
     // Following code used to gradually bring the car back in
     // line with the road - this helps steering considerably
+    // Scale by g_physicsStepScale so alignment rate matches original ~7 Hz
+    // regardless of physics update rate (avoids feeling too snappy at 50+ Hz).
 
     long adjust, speed;
 
@@ -2339,6 +2341,9 @@ static void AlignCarWithRoad(void) {
         if (adjust >= 0) {
             // this section makes a large adjustment, e.g. 60 degrees,
             // for when the car is very out of line (e.g. sideways with respect to road)
+
+            // Scale so total correction per second matches original logic tick rate
+            adjust = (long)((float)adjust * g_physicsStepScale);
 
             // just use remainder to adjust player's y angle
             // needs to correct signs because PC StuntCarRacer rotation is in opposite direction
@@ -2361,6 +2366,9 @@ static void AlignCarWithRoad(void) {
         speed = 0x7f00; // set speed amount to maximum
 
     adjust = ((adjust * speed) >> 15);
+
+    // Rate-independent: scale so alignment feels like original ~7 Hz at any physics Hz
+    adjust = (long)((float)adjust * g_physicsStepScale);
 
 #ifdef HIGHER_FRAME_RATE
     // 08/11/1998 - allow four times the frame rate by dividing adjustment by four
