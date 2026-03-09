@@ -18,7 +18,7 @@
  */
 
 #ifndef PHYSICS_UPDATE_HZ
-#define PHYSICS_UPDATE_HZ 7
+#define PHYSICS_UPDATE_HZ 50
 #endif
 
 /** Reference timestep (seconds) the integration was tuned for (original ~7.14 Hz logic tick).
@@ -42,7 +42,7 @@
  *           Raise to increase stiffness; lower to soften.
  *           256 = scale factor of 1.0 (pass through unchanged).
  * ============================================================================ */
-#define FRONT_SUSPENSION_SPRING   276   /* velocity gain (276/256 ≈ 1.08)  */
+#define FRONT_SUSPENSION_SPRING   1932   /* velocity gain (276/256 ≈ 1.08)  */
 #define FRONT_SUSPENSION_DAMPING  256   /* penetration scale (256/256 = 1.0) */
 
 /* ============================================================================
@@ -50,7 +50,7 @@
  *
  * Same formula as front; independent values let you tune rear separately.
  * ============================================================================ */
-#define REAR_SUSPENSION_SPRING    276   /* velocity gain (276/256 ≈ 1.08)  */
+#define REAR_SUSPENSION_SPRING    1932   /* velocity gain (276/256 ≈ 1.08)  */
 #define REAR_SUSPENSION_DAMPING   256   /* penetration scale (256/256 = 1.0) */
 
 /* ============================================================================
@@ -68,6 +68,6 @@
  *                         higher shift = less.
  * ============================================================================ */
 #define WALL_CONTACT_IMPULSE      0x800  /* lateral shove on car-to-car contact */
-#define WALL_CONTACT_DAMPING      4      /* right-shift for vertical impulse     */
+#define WALL_CONTACT_DAMPING      7      /* right-shift for vertical impulse     */
 
 #endif /* _PHYSICS_CONFIG */
