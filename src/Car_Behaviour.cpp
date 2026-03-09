@@ -193,6 +193,9 @@ static long grounded_delay = 0;
 static long grounded_count = 0;
 static long damage_value = 0;
 static long damaged_count = 0;
+/** Max damage applications per logic tick (one per wheel); cleared by BeginLogicTickDamagePeriod(). */
+static int g_damageApplicationsThisLogicPeriod = 0;
+static const int kMaxDamageApplicationsPerLogicTick = 3;
 
 long front_left_amount_below_road = 0, front_right_amount_below_road = 0, rear_amount_below_road = 0;
 
@@ -731,16 +734,8 @@ static void BoostPower(long boost_flag, long accel_flag, long brake_flag) {
     if ((!boost_flag) && (NOT_WRECKED)) {
         if (accelerating || (accel_flag || brake_flag)) {
             if (boostReserve > 0) {
-                // Match original timing gate: boost reserve only ticks down when
-                // fourteen_frames_elapsed is clear.
-                if (fourteen_frames_elapsed == 0) {
-                    --boostUnit;
-                    if (boostUnit < 0) {
-                        boostUnit = boost_unit_value;
-                        --boostReserve;
-                    }
-                }
-
+                // Reserve drain is done once per logic tick in AdvanceBoostReserve();
+                // here we only apply the boost effect for physics/display.
                 boost_activated = 0x80;
                 engine_z_acceleration *= 2;
             }
@@ -748,6 +743,27 @@ static void BoostPower(long boost_flag, long accel_flag, long brake_flag) {
     }
 
     return;
+}
+
+void AdvanceBoostReserve(DWORD logicInput) {
+    if (!(NOT_WRECKED))
+        return;
+    if (boostReserve <= 0)
+        return;
+    if (fourteen_frames_elapsed != 0)
+        return;
+    if (!(logicInput & KEY_P1_BOOST))
+        return;
+    // Boost key was held this logic window; drain one tick (original rate).
+    --boostUnit;
+    if (boostUnit < 0) {
+        boostUnit = boost_unit_value;
+        --boostReserve;
+    }
+}
+
+void BeginLogicTickDamagePeriod(void) {
+    g_damageApplicationsThisLogicPeriod = 0;
 }
 
 /*    ======================================================================================= */
@@ -1880,7 +1896,8 @@ static void CalculateWheelCollision(long road_height, long actual_height, long* 
                 damage_value = damage;
 
             damage -= 0x600;
-            if (fourteen_frames_elapsed == 0) {
+            if (fourteen_frames_elapsed == 0 &&
+                g_damageApplicationsThisLogicPeriod < kMaxDamageApplicationsPerLogicTick) {
                 damaged_count++;
                 if (damaged_count < damaged_limit) {
                     damage /= 256;
@@ -1892,6 +1909,7 @@ static void CalculateWheelCollision(long road_height, long actual_height, long* 
                         damage = 0xff;
                     *damage_in_out = damage;
                     damaged = 0x80;
+                    g_damageApplicationsThisLogicPeriod++;
                 }
             }
             if (*amount_below_road_in_out >= 0x1200)

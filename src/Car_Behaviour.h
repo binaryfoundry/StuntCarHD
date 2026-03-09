@@ -63,6 +63,10 @@ extern void DrawOtherGraphics(void);
 extern void UpdateDamage(void);
 extern void ResetFourteenFrameTiming(void);
 extern void AdvanceFourteenFrameTiming(void);
+/** Call once per game-logic tick to drain boost reserve (was in BoostPower, now rate-limited). */
+extern void AdvanceBoostReserve(DWORD logicInput);
+/** Call once per game-logic tick to allow damage to be applied again (rate-limit damage like boost). */
+extern void BeginLogicTickDamagePeriod(void);
 
 extern void ResetLapData(long car);
 extern void UpdateLapData(void);

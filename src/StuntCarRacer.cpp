@@ -15,6 +15,7 @@
 #include "Car.h"
 #include "Car_Behaviour.h"
 #include "Opponent_Behaviour.h"
+#include "PhysicsConfig.h"
 #include "wavefunctions.h"
 #include "Atlas.h"
 #include "version.h"
@@ -45,12 +46,14 @@
 /* Perspective depth range: keep near/far ratio modest to avoid depth-buffer precision loss and z-fighting */
 #define PERSPECTIVE_NEAR (5.0f)
 #define PERSPECTIVE_FAR  (131072.0f)
-static const double BASE_LOGIC_STEP_SECONDS = 0.14; // original coarse game step (~1/7.14s)
 /* Cap physics steps per frame to avoid catch-up stutter and spiral of death when the game can't keep up. */
 static const int MAX_PHYSICS_STEPS_PER_FRAME = 10;
 /* Body-dynamics integration rate from PHYSICS_UPDATE_HZ (PhysicsConfig.h). */
-static double g_physicsStepSeconds          = 1.0 / PHYSICS_UPDATE_HZ;
-static int    g_physicsSubstepsPerBaseLogic = static_cast<int>(BASE_LOGIC_STEP_SECONDS * PHYSICS_UPDATE_HZ + 0.5);
+static double g_physicsStepSeconds = 1.0 / PHYSICS_UPDATE_HZ;
+/* Number of physics steps per logic period (for audio spread); game logic itself uses real-time accumulator. */
+static int g_physicsSubstepsPerBaseLogic =
+    static_cast<int>(PHYSICS_REFERENCE_STEP_SECONDS * PHYSICS_UPDATE_HZ + 0.5);
+static const double g_logicTickInterval = (double)PHYSICS_REFERENCE_STEP_SECONDS;
 
 GameModeType GameMode = TRACK_MENU;
 
@@ -74,6 +77,8 @@ int wideScreen = 0;
 
 static bool bFrameMoved = FALSE;
 static double g_logicAccumulator = 0.0;
+/** Accumulates real time; game logic runs every g_logicTickInterval (PHYSICS_REFERENCE_STEP_SECONDS). */
+static double g_logicTickAccumulator = 0.0;
 static double g_lastFrameTime = 0.0;
 static double g_timingWindowStart = 0.0;
 static uint64_t g_renderFramesInWindow = 0;
@@ -84,7 +89,6 @@ static uint64_t g_baseLogicTickTotal = 0;
 static double g_renderFpsDisplay = 0.0;
 static double g_physicsTickRateDisplay = 0.0;
 static double g_baseLogicTickRateDisplay = 0.0;
-static int g_baseLogicSubstepCounter = 0;
 static DWORD g_logicInput = 0;
 static int g_controlSampleCount = 0;
 static int g_leftSampleCount = 0;
@@ -1188,9 +1192,8 @@ static void HandleTrackPreview(TextHelper& txtHelper) {
         bNewGame = TRUE;
         GameMode = GAME_IN_PROGRESS;
         g_restartEngineAudioOnFirstInput = true;
-        // Reduce start-of-race input/audio latency: make next substep trigger
-        // a full logic tick immediately.
-        g_baseLogicSubstepCounter = g_physicsSubstepsPerBaseLogic - 1;
+        // Trigger an immediate logic tick on first frame of race.
+        g_logicTickAccumulator = g_logicTickInterval;
         g_logicAccumulator = g_physicsStepSeconds;
         g_logicInput = lastInput;
         ResetControlSamplingWindow();
@@ -1897,10 +1900,13 @@ static bool RunFrame(double frameTime, bool allowQuit) {
         frameDelta = 0.25;
     g_lastFrameTime = frameTime;
     g_logicAccumulator += frameDelta;
-    /* Clamp accumulator so we never run more than MAX_PHYSICS_STEPS_PER_FRAME per frame; drop excess time to avoid spiral of death. */
+    g_logicTickAccumulator += frameDelta;
+    /* Clamp accumulators to avoid spiral of death. */
     const double maxAccumulator = MAX_PHYSICS_STEPS_PER_FRAME * g_physicsStepSeconds;
     if (g_logicAccumulator > maxAccumulator)
         g_logicAccumulator = maxAccumulator;
+    if (g_logicTickAccumulator > 2.0 * g_logicTickInterval)
+        g_logicTickAccumulator = g_logicTickInterval;
 
     bool anyLogicFrameMoved = false;
     int stepsThisFrame = 0;
@@ -1960,19 +1966,20 @@ static bool RunFrame(double frameTime, bool allowQuit) {
                 }
             }
         }
+    }
 
-        // --- Game-logic tick (every g_physicsSubstepsPerBaseLogic physics steps) ---
-        ++g_baseLogicSubstepCounter;
-        if (g_baseLogicSubstepCounter >= g_physicsSubstepsPerBaseLogic) {
-            g_baseLogicSubstepCounter = 0;
-            g_logicInput = BuildLogicInputFromSamples(lastInput);
-            ResetControlSamplingWindow();
-            OnFrameMove(&pDevice, frameTime, static_cast<float>(BASE_LOGIC_STEP_SECONDS), NULL);
-            ++g_baseLogicTicksInWindow;
-            ++g_baseLogicTickTotal;
-            if (bFrameMoved)
-                anyLogicFrameMoved = true;
-        }
+    // --- Game-logic tick at fixed PHYSICS_REFERENCE_STEP_SECONDS (real time) ---
+    while (g_logicTickAccumulator >= g_logicTickInterval) {
+        g_logicTickAccumulator -= g_logicTickInterval;
+        BeginLogicTickDamagePeriod();  // allow damage to be applied again (once per wheel per tick)
+        g_logicInput = BuildLogicInputFromSamples(lastInput);
+        AdvanceBoostReserve(g_logicInput);  // drain boost once per logic tick (was 50x/sec in BoostPower)
+        ResetControlSamplingWindow();
+        OnFrameMove(&pDevice, frameTime, static_cast<float>(g_logicTickInterval), NULL);
+        ++g_baseLogicTicksInWindow;
+        ++g_baseLogicTickTotal;
+        if (bFrameMoved)
+            anyLogicFrameMoved = true;
     }
     bFrameMoved = anyLogicFrameMoved;
 
@@ -2296,8 +2303,8 @@ int main(int argc, const char** argv) {
 #ifdef __EMSCRIPTEN__
     CapturePreviousCarState();
     g_lastFrameTime = GetTimeSeconds();
-    g_logicAccumulator = BASE_LOGIC_STEP_SECONDS;
-    g_baseLogicSubstepCounter = 0;
+    g_logicAccumulator = g_physicsStepSeconds;
+    g_logicTickAccumulator = g_logicTickInterval;
     g_logicInput = lastInput;
     ResetControlSamplingWindow();
     g_timingWindowStart = g_lastFrameTime;
@@ -2306,8 +2313,8 @@ int main(int argc, const char** argv) {
     bool run = true;
     CapturePreviousCarState();
     g_lastFrameTime = GetTimeSeconds();
-    g_logicAccumulator = BASE_LOGIC_STEP_SECONDS;
-    g_baseLogicSubstepCounter = 0;
+    g_logicAccumulator = g_physicsStepSeconds;
+    g_logicTickAccumulator = g_logicTickInterval;
     g_logicInput = lastInput;
     ResetControlSamplingWindow();
     g_timingWindowStart = g_lastFrameTime;
