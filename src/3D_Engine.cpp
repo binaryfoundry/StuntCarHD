@@ -496,7 +496,7 @@ void Line(long c1, // co-ordinate offset for line, point 1
           long c2) // co-ordinate offset for line, point 2
 {
     long x1, y1, x2, y2, i, sides = 2;
-    D3DTLVERTEX TLVertices[2];
+    TLVERTEX TLVertices[2];
     HRESULT err;
 
     x1 = Screen_Coords[c1].x;
@@ -525,8 +525,20 @@ void Line(long c1, // co-ordinate offset for line, point 1
     TLVertices[1].tu = 0.0f;
     TLVertices[1].tv = 0.0f;
 
-    //*** Use DrawPrimitive to draw the face
-    err = d3dDevice->DrawPrimitive(D3DPT_LINELIST, D3DVT_TLVERTEX, TLVertices, sides, D3DDP_WAIT);
+    RenderDevice* dev = GetRenderDevice();
+    static VertexBuffer* pLineVB = NULL;
+    if (!pLineVB && FAILED(dev->CreateVertexBuffer(2 * sizeof(TRANSFORMEDVERTEX), VB_USAGE_WRITEONLY,
+                                                    FVF_XYZRHW | FVF_DIFFUSE, POOL_DEFAULT, &pLineVB, NULL)))
+        return;
+    TRANSFORMEDVERTEX* pV;
+    if (FAILED(pLineVB->Lock(0, 2 * sizeof(TRANSFORMEDVERTEX), (void**)&pV, 0)))
+        return;
+    pV[0].x = TLVertices[0].sx; pV[0].y = TLVertices[0].sy; pV[0].z = TLVertices[0].sz; pV[0].rhw = TLVertices[0].rhw; pV[0].color = TLVertices[0].color;
+    pV[1].x = TLVertices[1].sx; pV[1].y = TLVertices[1].sy; pV[1].z = TLVertices[1].sz; pV[1].rhw = TLVertices[1].rhw; pV[1].color = TLVertices[1].color;
+    pLineVB->Unlock();
+    dev->SetStreamSource(0, pLineVB, 0, sizeof(TRANSFORMEDVERTEX));
+    dev->SetFVF(FVF_XYZRHW | FVF_DIFFUSE);
+    err = dev->DrawPrimitive(PT_LINELIST, 0, 1);
 }
 
 /*    ======================================================================================= */
@@ -712,7 +724,7 @@ void LineZClipped(long c1, // co-ordinate offset for line, point 1
     long screen_width, screen_height;
     COORD_3D *point1, *point2;
     long x1, y1, x2, y2, i, sides = 2;
-    D3DTLVERTEX TLVertices[2];
+    TLVERTEX TLVertices[2];
     HRESULT err;
 
     //fprintf(out, "LineZClipped\n");
@@ -776,8 +788,20 @@ void LineZClipped(long c1, // co-ordinate offset for line, point 1
     TLVertices[1].tu = 0.0f;
     TLVertices[1].tv = 0.0f;
 
-    //*** Use DrawPrimitive to draw the face
-    err = d3dDevice->DrawPrimitive(D3DPT_LINELIST, D3DVT_TLVERTEX, TLVertices, sides, D3DDP_WAIT);
+    RenderDevice* dev = GetRenderDevice();
+    static VertexBuffer* pLineVB = NULL;
+    if (!pLineVB && FAILED(dev->CreateVertexBuffer(2 * sizeof(TRANSFORMEDVERTEX), VB_USAGE_WRITEONLY,
+                                                    FVF_XYZRHW | FVF_DIFFUSE, POOL_DEFAULT, &pLineVB, NULL)))
+        return;
+    TRANSFORMEDVERTEX* pV;
+    if (FAILED(pLineVB->Lock(0, 2 * sizeof(TRANSFORMEDVERTEX), (void**)&pV, 0)))
+        return;
+    pV[0].x = TLVertices[0].sx; pV[0].y = TLVertices[0].sy; pV[0].z = TLVertices[0].sz; pV[0].rhw = TLVertices[0].rhw; pV[0].color = TLVertices[0].color;
+    pV[1].x = TLVertices[1].sx; pV[1].y = TLVertices[1].sy; pV[1].z = TLVertices[1].sz; pV[1].rhw = TLVertices[1].rhw; pV[1].color = TLVertices[1].color;
+    pLineVB->Unlock();
+    dev->SetStreamSource(0, pLineVB, 0, sizeof(TRANSFORMEDVERTEX));
+    dev->SetFVF(FVF_XYZRHW | FVF_DIFFUSE);
+    err = dev->DrawPrimitive(PT_LINELIST, 0, 1);
 }
 
 /*    ======================================================================================= */
@@ -917,14 +941,14 @@ struct TRANSFORMEDVERTEX {
     FLOAT x, y, z, rhw; // The transformed position for the vertex.
     DWORD color;        // The vertex color.
 };
-#define D3DFVF_TRANSFORMEDVERTEX (D3DFVF_XYZRHW | D3DFVF_DIFFUSE)
+#define FVF_TRANSFORMEDVERTEX (FVF_XYZRHW | FVF_DIFFUSE)
 
-static IDirect3DVertexBuffer9* pPolygonVB = NULL;
+static VertexBuffer* pPolygonVB = NULL;
 
-HRESULT CreatePolygonVertexBuffer(IDirect3DDevice9* pd3dDevice) {
+HRESULT CreatePolygonVertexBuffer(RenderDevice* pDevice) {
     if (pPolygonVB == NULL) {
-        if (FAILED(pd3dDevice->CreateVertexBuffer(MAX_POLY_SIDES * sizeof(TRANSFORMEDVERTEX), D3DUSAGE_WRITEONLY,
-                                                  D3DFVF_TRANSFORMEDVERTEX, D3DPOOL_DEFAULT, &pPolygonVB, NULL))) {
+        if (FAILED(pDevice->CreateVertexBuffer(MAX_POLY_SIDES * sizeof(TRANSFORMEDVERTEX), VB_USAGE_WRITEONLY,
+                                                  FVF_TRANSFORMEDVERTEX, POOL_DEFAULT, &pPolygonVB, NULL))) {
             OutputDebugStringW(L"ERROR: Failed to create polygon vertex buffer\n");
             return E_FAIL;
         }
@@ -941,7 +965,7 @@ void FreePolygonVertexBuffer(void) {
 // Draw flat polygon (no z information)
 void DrawPolygon(POINT* pptr, long sides) {
     long i;
-    IDirect3DDevice9* pd3dDevice = GetRenderDevice();
+    RenderDevice* pDevice = GetRenderDevice();
 
     TRANSFORMEDVERTEX* pVertices;
 
@@ -964,9 +988,9 @@ void DrawPolygon(POINT* pptr, long sides) {
     }
     pPolygonVB->Unlock();
 
-    pd3dDevice->SetStreamSource(0, pPolygonVB, 0, sizeof(TRANSFORMEDVERTEX));
-    pd3dDevice->SetFVF(D3DFVF_TRANSFORMEDVERTEX);
-    pd3dDevice->DrawPrimitive(D3DPT_TRIANGLEFAN, 0, sides - 2);
+    pDevice->SetStreamSource(0, pPolygonVB, 0, sizeof(TRANSFORMEDVERTEX));
+    pDevice->SetFVF(FVF_TRANSFORMEDVERTEX);
+    pDevice->DrawPrimitive(PT_TRIANGLEFAN, 0, sides - 2);
 
     return;
 }
@@ -991,15 +1015,14 @@ void DrawFilledRectangle(long x1, long y1, long x2, long y2, DWORD colour) {
 #endif
 #else
     HRESULT hr;
-    D3DRECT rect;
-    IDirect3DDevice9* pd3dDevice = GetRenderDevice();
+    ClearRect rect;
+    RenderDevice* pDevice = GetRenderDevice();
 
     rect.x1 = x1;
     rect.y1 = y1;
-    // note that Clear fills up to, but not including, the right/bottom points of the rectangle
     rect.x2 = x2 + 1;
     rect.y2 = y2 + 1;
-    V(pd3dDevice->Clear(1, &rect, D3DCLEAR_TARGET, colour, 0, 0));
+    V(pDevice->Clear(1, &rect, CLEAR_TARGET, colour, 0, 0));
 #endif
     return;
 }

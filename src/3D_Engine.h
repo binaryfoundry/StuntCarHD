@@ -5,7 +5,9 @@
 /*    ========= */
 /*    Constants */
 /*    ========= */
-#define PI 3.1415926535898
+#ifndef PI
+#define PI 3.14159265358979323846
+#endif
 
 #define MAX_ANGLE 65536 // value that is equivalent to 360 degrees
 
@@ -101,7 +103,7 @@ extern void ZClip(COORD_3D* below, COORD_3D* above, long screen_width, long scre
 extern void LockViewpointToTarget(long viewpoint_x, long viewpoint_y, long viewpoint_z, long target_x, long target_y,
                                   long target_z, long* viewpoint_x_angle, long* viewpoint_y_angle);
 
-extern HRESULT CreatePolygonVertexBuffer(IDirect3DDevice9* pd3dDevice);
+extern HRESULT CreatePolygonVertexBuffer(RenderDevice* pDevice);
 extern void FreePolygonVertexBuffer(void);
 
 extern void DrawPolygon(POINT* pptr, long sides);

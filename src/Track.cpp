@@ -1102,7 +1102,7 @@ static void ConvertAmigaPieceY(AMIGA_PIECE_Y* amiga, COORD_Y* dest) {
 
 typedef enum { LEFT_SIDE = 0, RIGHT_SIDE, ROAD, NUM_TRACK_FACES } TrackFaceType;
 
-static IDirect3DVertexBuffer9 *pTrackVB = NULL, *pShadowVB = NULL, *pGroundPlaneVB = NULL;
+static VertexBuffer *pTrackVB = NULL, *pShadowVB = NULL, *pGroundPlaneVB = NULL;
 static long trackVertices, trackSegments;
 static long numShadowVertices;
 static long PieceFirstVertex[NUM_TRACK_FACES][MAX_PIECES_PER_TRACK];
@@ -1157,9 +1157,9 @@ static void SetSegmentTextures(void) {
     }
 }
 
-static D3DXVECTOR3 GetPieceVertex(long piece, long piece_x, long piece_y, long piece_z, long offset) {
+static glm::vec3 GetPieceVertex(long piece, long piece_x, long piece_y, long piece_z, long offset) {
     long x, y, z;
-    D3DXVECTOR3 v;
+    glm::vec3 v;
 
     x = Track[piece].coords[offset].x;
     y = Track[piece].coords[offset].y;
@@ -1171,23 +1171,20 @@ static D3DXVECTOR3 GetPieceVertex(long piece, long piece_x, long piece_y, long p
     y += piece_y;
     z += piece_z;
 
-    v = D3DXVECTOR3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+    v = glm::vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
     return (v);
 }
 
 static void StorePieceTriangle(long piece, long piece_x, long piece_y, long piece_z, long offset1, long offset2,
                                long offset3, UTVERTEX* pVertices, DWORD colour, short txind, long s) {
-    D3DXVECTOR3 v1, v2, v3; //, edge1, edge2, surface_normal;
+    glm::vec3 v1, v2, v3; //, edge1, edge2, surface_normal;
 
     v1 = GetPieceVertex(piece, piece_x, piece_y, piece_z, offset1);
     v2 = GetPieceVertex(piece, piece_x, piece_y, piece_z, offset2);
     v3 = GetPieceVertex(piece, piece_x, piece_y, piece_z, offset3);
 
     /*
-    // Calculate surface normal
-    edge1 = v2-v1; edge2 = v3-v2;
-    D3DXVec3Cross( &surface_normal, &edge1, &edge2 );
-    D3DXVec3Normalize( &surface_normal, &surface_normal );
+    // Calculate surface normal: surface_normal = glm::normalize(glm::cross(v2 - v1, v3 - v2));
     */
 
     pVertices[trackVertices].pos = v1;
@@ -1230,17 +1227,13 @@ static void StorePieceTriangle(long piece, long piece_x, long piece_y, long piec
 // Fetch and store the piece vertex identified by offset1 (offset2 and 3 are just used to calculate the surface normal)
 static void StorePieceVertex1(long piece, long piece_x, long piece_y, long piece_z, long offset1, long offset2,
                               long offset3, UTVERTEX* pVertices, DWORD colour, short txind, long s) {
-    D3DXVECTOR3 v1; //, v2, v3, edge1, edge2, surface_normal;
+    glm::vec3 v1; //, v2, v3, edge1, edge2, surface_normal;
 
     v1 = GetPieceVertex(piece, piece_x, piece_y, piece_z, offset1);
     /*
     v2 = GetPieceVertex( piece, piece_x, piece_y, piece_z, offset2 );
     v3 = GetPieceVertex( piece, piece_x, piece_y, piece_z, offset3 );
-
-    // Calculate surface normal
-    edge1 = v2-v1; edge2 = v3-v2;
-    D3DXVec3Cross( &surface_normal, &edge1, &edge2 );
-    D3DXVec3Normalize( &surface_normal, &surface_normal );
+    // surface_normal = glm::normalize(glm::cross(v2 - v1, v3 - v2));
     */
 
     pVertices[trackVertices].pos = v1;
@@ -1261,8 +1254,8 @@ void RemoveShadowTriangles(void) {
     return;
 }
 
-void StoreShadowTriangle(D3DXVECTOR3 v1, D3DXVECTOR3 v2, D3DXVECTOR3 v3, long other_colour) {
-    //D3DXVECTOR3 edge1, edge2, surface_normal;
+void StoreShadowTriangle(glm::vec3 v1, glm::vec3 v2, glm::vec3 v3, long other_colour) {
+    //glm::vec3 edge1, edge2, surface_normal;
     DWORD colour;
 
     UTVERTEX* pVertices;
@@ -1272,10 +1265,7 @@ void StoreShadowTriangle(D3DXVECTOR3 v1, D3DXVECTOR3 v2, D3DXVECTOR3 v3, long ot
     }
 
     /*
-    // Calculate surface normal
-    edge1 = v2-v1; edge2 = v3-v2;
-    D3DXVec3Cross( &surface_normal, &edge1, &edge2 );
-    D3DXVec3Normalize( &surface_normal, &surface_normal );
+    // surface_normal = glm::normalize(glm::cross(v2 - v1, v3 - v2));
     */
 
     if (other_colour)
@@ -1499,10 +1489,10 @@ static void CreateUpdatePieceInVBMode2(long piece, long face, UTVERTEX* pVertice
  * The functions to render the opponent's car shadow are in this module because they
  * need the same transformations as for the track (as the shadow is on the track)
  */
-HRESULT CreateShadowVertexBuffer(IDirect3DDevice9* pd3dDevice) {
+HRESULT CreateShadowVertexBuffer(RenderDevice* pDevice) {
     if (pShadowVB == NULL) {
-        if (FAILED(pd3dDevice->CreateVertexBuffer(MAX_VERTICES_PER_SHADOW * sizeof(UTVERTEX), D3DUSAGE_WRITEONLY,
-                                                  D3DFVF_UTVERTEX, D3DPOOL_DEFAULT, &pShadowVB, NULL))) {
+        if (FAILED(pDevice->CreateVertexBuffer(MAX_VERTICES_PER_SHADOW * sizeof(UTVERTEX), VB_USAGE_WRITEONLY,
+                                                  FVF_UTVERTEX, POOL_DEFAULT, &pShadowVB, NULL))) {
             OutputDebugStringW(L"ERROR: Failed to create shadow vertex buffer\n");
             return E_FAIL;
         }
@@ -1525,10 +1515,10 @@ void FreeShadowVertexBuffer(void) {
         pShadowVB->Release(), pShadowVB = NULL;
 }
 
-HRESULT CreateTrackVertexBuffer(IDirect3DDevice9* pd3dDevice) {
+HRESULT CreateTrackVertexBuffer(RenderDevice* pDevice) {
     if (pTrackVB == NULL) {
-        if (FAILED(pd3dDevice->CreateVertexBuffer(MAX_VERTICES_PER_TRACK * sizeof(UTVERTEX), D3DUSAGE_WRITEONLY,
-                                                  D3DFVF_UTVERTEX, D3DPOOL_DEFAULT, &pTrackVB, NULL))) {
+        if (FAILED(pDevice->CreateVertexBuffer(MAX_VERTICES_PER_TRACK * sizeof(UTVERTEX), VB_USAGE_WRITEONLY,
+                                                  FVF_UTVERTEX, POOL_DEFAULT, &pTrackVB, NULL))) {
             OutputDebugStringW(L"ERROR: Failed to create track vertex buffer\n");
             return E_FAIL;
         }
@@ -1570,7 +1560,7 @@ void FreeTrackVertexBuffer(void) {
 }
 
 // Used to update vertices, e.g. by MoveDrawBridge
-HRESULT UpdatePieceInVB(IDirect3DDevice9* pd3dDevice, long piece) {
+HRESULT UpdatePieceInVB(RenderDevice* pDevice, long piece) {
     long firstVertex, face; //, numVertices;
     long savedTrackVertices = trackVertices;
 
@@ -1616,9 +1606,9 @@ extern long player_current_piece; // use as players_road_section
 extern long player_current_segment;
 
 #define TEXTURED_SEGMENTS_AROUND_PLAYER 11
-extern IDirect3DTexture9* g_pAtlas;
+extern GpuTexture* g_pAtlas;
 
-void DrawTrack(IDirect3DDevice9* pd3dDevice) {
+void DrawTrack(RenderDevice* pDevice) {
     long segmentsRendered = 0;
 
     if (TrackID == NO_TRACK)
@@ -1627,22 +1617,22 @@ void DrawTrack(IDirect3DDevice9* pd3dDevice) {
     //    VALUE1 = player_current_piece;
     //    VALUE2 = player_current_segment;
 
-    pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
-    pd3dDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+    pDevice->SetRenderState(RS_ZENABLE, TRUE);
+    pDevice->SetRenderState(RS_CULLMODE, CULL_CCW);
 
-    pd3dDevice->SetStreamSource(0, pTrackVB, 0, sizeof(UTVERTEX));
-    pd3dDevice->SetFVF(D3DFVF_UTVERTEX);
+    pDevice->SetStreamSource(0, pTrackVB, 0, sizeof(UTVERTEX));
+    pDevice->SetFVF(FVF_UTVERTEX);
     if ((GameMode == TRACK_MENU) || (GameMode == TRACK_PREVIEW)) {
         /*
          * Draw track without road lines
          */
-        if (bTrackDrawMode == 0) // Use D3DPT_TRIANGLELIST
+        if (bTrackDrawMode == 0) // Use PT_TRIANGLELIST
         {
-            pd3dDevice->DrawPrimitive(D3DPT_TRIANGLELIST, 0,
+            pDevice->DrawPrimitive(PT_TRIANGLELIST, 0,
                                       NumTrackSegments * 6); // 6 triangles per segment (road and two sides)
-        } else if (bTrackDrawMode == 1) // Use D3DPT_TRIANGLESTRIP (so there are less vertices in total)
+        } else if (bTrackDrawMode == 1) // Use PT_TRIANGLESTRIP (so there are less vertices in total)
         {
-            pd3dDevice->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0, trackVertices - 2);
+            pDevice->DrawPrimitive(PT_TRIANGLESTRIP, 0, trackVertices - 2);
         } else {
             // Another (possibly faster and more efficient) option would be to draw each piece of track individually
             // (but using DrawIndexedPrimitive / triangle strip so there are less vertices in total)
@@ -1653,16 +1643,16 @@ void DrawTrack(IDirect3DDevice9* pd3dDevice) {
         /*
          * Draw track with road lines
          */
-        D3DPRIMITIVETYPE primitiveType;
+        PrimitiveType primitiveType;
         long verticesPerSegment, firstTexturedSegment, lastTexturedSegment, i, count, s, v;
 
-        if (bTrackDrawMode == 0) // Use D3DPT_TRIANGLELIST
+        if (bTrackDrawMode == 0) // Use PT_TRIANGLELIST
         {
-            primitiveType = D3DPT_TRIANGLELIST;
+            primitiveType = PT_TRIANGLELIST;
             verticesPerSegment = 6;
-        } else if (bTrackDrawMode == 1) // Use D3DPT_TRIANGLESTRIP (so there are less vertices in total)
+        } else if (bTrackDrawMode == 1) // Use PT_TRIANGLESTRIP (so there are less vertices in total)
         {
-            primitiveType = D3DPT_TRIANGLESTRIP;
+            primitiveType = PT_TRIANGLESTRIP;
             verticesPerSegment = 2;
         } else {
             // Another (possibly faster and more efficient) option would be to draw each piece of track individually
@@ -1673,11 +1663,11 @@ void DrawTrack(IDirect3DDevice9* pd3dDevice) {
         /*
          * 1) Disable texture mapping then draw left and right sides
          */
-        pd3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        pDevice->SetTextureStageState(0, TSS_COLOROP, TOP_DISABLE);
         v = PieceFirstVertex[LEFT_SIDE][0];                                // first left side vertex
-        pd3dDevice->DrawPrimitive(primitiveType, v, NumTrackSegments * 2); // 2 side triangles per segment
+        pDevice->DrawPrimitive(primitiveType, v, NumTrackSegments * 2); // 2 side triangles per segment
         v = PieceFirstVertex[RIGHT_SIDE][0];                               // first right side vertex
-        pd3dDevice->DrawPrimitive(primitiveType, v, NumTrackSegments * 2); // 2 side triangles per segment
+        pDevice->DrawPrimitive(primitiveType, v, NumTrackSegments * 2); // 2 side triangles per segment
 
         /*
          * 2) Draw first part of road untextured (up to where road lines begin, in region surrounding player)
@@ -1688,20 +1678,20 @@ void DrawTrack(IDirect3DDevice9* pd3dDevice) {
 
         v = PieceFirstVertex[ROAD][0]; // first road vertex
         if (firstTexturedSegment > 0) {
-            pd3dDevice->DrawPrimitive(primitiveType, v, firstTexturedSegment * 2); // 2 road triangles per segment
+            pDevice->DrawPrimitive(primitiveType, v, firstTexturedSegment * 2); // 2 road triangles per segment
             segmentsRendered += firstTexturedSegment;
         }
 
         /*
          * 3) Enable texture mapping then draw textured road region surrounding player (i.e. with road lines)
          */
-        //        pd3dDevice->SetTextureStageState( 0, D3DTSS_COLOROP,   D3DTOP_MODULATE );
-        pd3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-        pd3dDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-        pd3dDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-        pd3dDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+        //        pDevice->SetTextureStageState( 0, TSS_COLOROP,   TOP_MODULATE );
+        pDevice->SetTextureStageState(0, TSS_COLOROP, TOP_SELECTARG1);
+        pDevice->SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+        pDevice->SetTextureStageState(0, TSS_COLORARG2, TA_DIFFUSE);
+        pDevice->SetTextureStageState(0, TSS_ALPHAOP, TOP_DISABLE);
 
-        pd3dDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        pDevice->SetTextureStageState(1, TSS_COLOROP, TOP_DISABLE);
 
         count = lastTexturedSegment - firstTexturedSegment + 1;
 
@@ -1716,7 +1706,7 @@ void DrawTrack(IDirect3DDevice9* pd3dDevice) {
         v += s * verticesPerSegment;
 
         // Setup texture 1
-        pd3dDevice->SetTexture(0, g_pAtlas);
+        pDevice->SetTexture(0, g_pAtlas);
 
         for (i = 0; i < count; i++, s++, v += verticesPerSegment) {
             if (s == NumTrackSegments) {
@@ -1725,29 +1715,29 @@ void DrawTrack(IDirect3DDevice9* pd3dDevice) {
             }
 
             // Setup texture 1
-            //pd3dDevice->SetTexture( 0, g_pRoadTexture[SegmentRoadTexture[s]] );
+            //pDevice->SetTexture( 0, g_pRoadTexture[SegmentRoadTexture[s]] );
 
-            pd3dDevice->DrawPrimitive(primitiveType, v, 2); // 2 road triangles per segment
+            pDevice->DrawPrimitive(primitiveType, v, 2); // 2 road triangles per segment
             segmentsRendered++;
         }
 
         /*
          * 4) Disable texture mapping then (optionally) draw third part of road untextured (after end of road lines)
          */
-        pd3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        pDevice->SetTextureStageState(0, TSS_COLOROP, TOP_DISABLE);
 
         // v is already set correctly from 3) above
         if (segmentsRendered < NumTrackSegments) {
             s = NumTrackSegments - segmentsRendered;
-            pd3dDevice->DrawPrimitive(primitiveType, v, s * 2); // 2 road triangles per segment
+            pDevice->DrawPrimitive(primitiveType, v, s * 2); // 2 road triangles per segment
         }
     }
 
     /* Finally draw the opponent's car shadow */
     if ((GameMode != TRACK_MENU) && (numShadowVertices > 0)) {
-        pd3dDevice->SetStreamSource(0, pShadowVB, 0, sizeof(UTVERTEX));
-        pd3dDevice->SetFVF(D3DFVF_UTVERTEX);
-        pd3dDevice->DrawPrimitive(D3DPT_TRIANGLELIST, 0, numShadowVertices / 3);
+        pDevice->SetStreamSource(0, pShadowVB, 0, sizeof(UTVERTEX));
+        pDevice->SetFVF(FVF_UTVERTEX);
+        pDevice->DrawPrimitive(PT_TRIANGLELIST, 0, numShadowVertices / 3);
     }
 }
 
@@ -1757,11 +1747,11 @@ void DrawTrack(IDirect3DDevice9* pd3dDevice) {
 /*    Description:    Create a 3D ground plane mesh in world space                           */
 /*    ======================================================================================= */
 
-HRESULT CreateGroundPlaneVertexBuffer(IDirect3DDevice9* pd3dDevice) {
+HRESULT CreateGroundPlaneVertexBuffer(RenderDevice* pDevice) {
     if (pGroundPlaneVB == NULL) {
         long vertices = 6;
-        if (FAILED(pd3dDevice->CreateVertexBuffer(vertices * sizeof(UTVERTEX), D3DUSAGE_WRITEONLY,
-                                                  D3DFVF_UTVERTEX, D3DPOOL_DEFAULT, &pGroundPlaneVB, NULL))) {
+        if (FAILED(pDevice->CreateVertexBuffer(vertices * sizeof(UTVERTEX), VB_USAGE_WRITEONLY,
+                                                  FVF_UTVERTEX, POOL_DEFAULT, &pGroundPlaneVB, NULL))) {
             OutputDebugStringW(L"ERROR: Failed to create ground plane vertex buffer\n");
             return E_FAIL;
         }
@@ -1786,35 +1776,35 @@ HRESULT CreateGroundPlaneVertexBuffer(IDirect3DDevice9* pd3dDevice) {
     const float ground_y = static_cast<float>(TRACK_BOTTOM_Y) - 2.0f;
     const DWORD ground_color = SCRGB(SCR_BASE_COLOUR + 13);    // match Backdrop GROUND_COLOUR
 
-    // Winding: CW when viewed from above so D3DCULL_CCW does not discard the faces.
+    // Winding: CW when viewed from above so CULL_CCW does not discard the faces.
     // Triangle 1
-    pVertices[0].pos = D3DXVECTOR3(min_xz, ground_y, min_xz);
+    pVertices[0].pos = glm::vec3(min_xz, ground_y, min_xz);
     pVertices[0].color = ground_color;
     pVertices[0].tu = 0.0f;
     pVertices[0].tv = 0.0f;
 
-    pVertices[1].pos = D3DXVECTOR3(min_xz, ground_y, max_xz);
+    pVertices[1].pos = glm::vec3(min_xz, ground_y, max_xz);
     pVertices[1].color = ground_color;
     pVertices[1].tu = 0.0f;
     pVertices[1].tv = 1.0f;
 
-    pVertices[2].pos = D3DXVECTOR3(max_xz, ground_y, min_xz);
+    pVertices[2].pos = glm::vec3(max_xz, ground_y, min_xz);
     pVertices[2].color = ground_color;
     pVertices[2].tu = 1.0f;
     pVertices[2].tv = 0.0f;
 
     // Triangle 2
-    pVertices[3].pos = D3DXVECTOR3(max_xz, ground_y, min_xz);
+    pVertices[3].pos = glm::vec3(max_xz, ground_y, min_xz);
     pVertices[3].color = ground_color;
     pVertices[3].tu = 1.0f;
     pVertices[3].tv = 0.0f;
 
-    pVertices[4].pos = D3DXVECTOR3(min_xz, ground_y, max_xz);
+    pVertices[4].pos = glm::vec3(min_xz, ground_y, max_xz);
     pVertices[4].color = ground_color;
     pVertices[4].tu = 0.0f;
     pVertices[4].tv = 1.0f;
 
-    pVertices[5].pos = D3DXVECTOR3(max_xz, ground_y, max_xz);
+    pVertices[5].pos = glm::vec3(max_xz, ground_y, max_xz);
     pVertices[5].color = ground_color;
     pVertices[5].tu = 1.0f;
     pVertices[5].tv = 1.0f;
@@ -1828,21 +1818,21 @@ void FreeGroundPlaneVertexBuffer(void) {
         pGroundPlaneVB->Release(), pGroundPlaneVB = NULL;
 }
 
-void DrawGroundPlane(IDirect3DDevice9* pd3dDevice) {
+void DrawGroundPlane(RenderDevice* pDevice) {
     if (pGroundPlaneVB == NULL)
         return;
 
     if (TrackID == NO_TRACK)
         return;
 
-    pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
-    pd3dDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+    pDevice->SetRenderState(RS_ZENABLE, TRUE);
+    pDevice->SetRenderState(RS_CULLMODE, CULL_CCW);
 
-    pd3dDevice->SetStreamSource(0, pGroundPlaneVB, 0, sizeof(UTVERTEX));
-    pd3dDevice->SetFVF(D3DFVF_UTVERTEX);
+    pDevice->SetStreamSource(0, pGroundPlaneVB, 0, sizeof(UTVERTEX));
+    pDevice->SetFVF(FVF_UTVERTEX);
 
-    pd3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_DISABLE);
-    pd3dDevice->DrawPrimitive(D3DPT_TRIANGLELIST, 0, 2);
+    pDevice->SetTextureStageState(0, TSS_COLOROP, TOP_DISABLE);
+    pDevice->DrawPrimitive(PT_TRIANGLELIST, 0, 2);
 }
 
 /*    ======================================================================================= */
@@ -1873,7 +1863,7 @@ static unsigned char TAB5a9a6[16] = {0xf7, 0xf7, 0xf6, 0xf6, 0xf5, 0xf5, 0xf6, 0
 
 void MoveDrawBridge(void) {
     long f, i, height, y, yinc;
-    IDirect3DDevice9* pd3dDevice = GetRenderDevice();
+    RenderDevice* pDevice = GetRenderDevice();
 
     if (TrackID != DRAW_BRIDGE)
         return;
@@ -1938,10 +1928,10 @@ not_on_draw_bridge:            // neither player or opponent are on Draw Bridge 
     UpdateDrawBridgeYCoords(55, 0, 7, (NUM_DRAW_BRIDGE_Y_VALUES - 1 - 7), -1);
 
     // 29/06/2007 also update pieces in Direct3D vertex buffer
-    UpdatePieceInVB(pd3dDevice, 51);
-    UpdatePieceInVB(pd3dDevice, 52);
-    UpdatePieceInVB(pd3dDevice, 54);
-    UpdatePieceInVB(pd3dDevice, 55);
+    UpdatePieceInVB(pDevice, 51);
+    UpdatePieceInVB(pDevice, 52);
+    UpdatePieceInVB(pDevice, 54);
+    UpdatePieceInVB(pDevice, 55);
 
     if (opponents_current_piece != 47)
         return;

@@ -94,13 +94,13 @@ extern long ConvertAmigaTrack(long track);
 
 extern void FreeTrackData(void);
 
-extern HRESULT CreateTrackVertexBuffer(IDirect3DDevice9* pd3dDevice);
+extern HRESULT CreateTrackVertexBuffer(RenderDevice* pDevice);
 
 extern void FreeTrackVertexBuffer(void);
 
-extern void DrawTrack(IDirect3DDevice9* pd3dDevice);
+extern void DrawTrack(RenderDevice* pDevice);
 
-extern HRESULT CreateShadowVertexBuffer(IDirect3DDevice9* pd3dDevice);
+extern HRESULT CreateShadowVertexBuffer(RenderDevice* pDevice);
 
 extern void FreeShadowVertexBuffer(void);
 
@@ -108,10 +108,10 @@ extern void MoveDrawBridge(void);
 
 extern void ResetDrawBridge(void);
 
-extern HRESULT CreateGroundPlaneVertexBuffer(IDirect3DDevice9* pd3dDevice);
+extern HRESULT CreateGroundPlaneVertexBuffer(RenderDevice* pDevice);
 
 extern void FreeGroundPlaneVertexBuffer(void);
 
-extern void DrawGroundPlane(IDirect3DDevice9* pd3dDevice);
+extern void DrawGroundPlane(RenderDevice* pDevice);
 
 #endif /* _TRACK */

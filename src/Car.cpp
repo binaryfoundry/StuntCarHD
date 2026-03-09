@@ -492,26 +492,21 @@ static void DrawCarLeftWheelTread(long offset) // offset into co-ordinates
 /*                                                                                            */
 /*    Description:    Draw the car using the supplied viewpoint                                */
 /*    ======================================================================================= */
-static IDirect3DVertexBuffer9* pCarVB = NULL;
+static VertexBuffer* pCarVB = NULL;
 static long numCarVertices = 0;
 
 static void StoreCarTriangle(COORD_3D* c1, COORD_3D* c2, COORD_3D* c3, UTVERTEX* pVertices, DWORD colour) {
-    D3DXVECTOR3 v1, v2, v3; //, edge1, edge2, surface_normal;
+    glm::vec3 v1(static_cast<float>(c1->x), static_cast<float>(c1->y), static_cast<float>(c1->z));
+    glm::vec3 v2(static_cast<float>(c2->x), static_cast<float>(c2->y), static_cast<float>(c2->z));
+    glm::vec3 v3(static_cast<float>(c3->x), static_cast<float>(c3->y), static_cast<float>(c3->z));
 
     if ((numCarVertices + 3) > MAX_VERTICES_PER_CAR) {
         MessageBox(NULL, L"Exceeded numCarVertices", L"StoreCarTriangle", MB_OK);
         return;
     }
 
-    v1 = D3DXVECTOR3(static_cast<float>(c1->x), static_cast<float>(c1->y), static_cast<float>(c1->z));
-    v2 = D3DXVECTOR3(static_cast<float>(c2->x), static_cast<float>(c2->y), static_cast<float>(c2->z));
-    v3 = D3DXVECTOR3(static_cast<float>(c3->x), static_cast<float>(c3->y), static_cast<float>(c3->z));
-
     /*
-    // Calculate surface normal
-    edge1 = v2-v1; edge2 = v3-v2;
-    D3DXVec3Cross( &surface_normal, &edge1, &edge2 );
-    D3DXVec3Normalize( &surface_normal, &surface_normal );
+    // Calculate surface normal: surface_normal = glm::normalize(glm::cross(v2 - v1, v3 - v2));
     */
 
     pVertices[numCarVertices].pos = v1;
@@ -653,10 +648,10 @@ static void CreateCarInVB(UTVERTEX* pVertices) {
 #undef vertices
 }
 
-HRESULT CreateCarVertexBuffer(IDirect3DDevice9* pd3dDevice) {
+HRESULT CreateCarVertexBuffer(RenderDevice* pDevice) {
     if (pCarVB == NULL) {
-        if (FAILED(pd3dDevice->CreateVertexBuffer(MAX_VERTICES_PER_CAR * sizeof(UTVERTEX), D3DUSAGE_WRITEONLY,
-                                                  D3DFVF_UTVERTEX, D3DPOOL_DEFAULT, &pCarVB, NULL))) {
+        if (FAILED(pDevice->CreateVertexBuffer(MAX_VERTICES_PER_CAR * sizeof(UTVERTEX), VB_USAGE_WRITEONLY,
+                                                  FVF_UTVERTEX, POOL_DEFAULT, &pCarVB, NULL))) {
             OutputDebugStringW(L"ERROR: Failed to create car vertex buffer\n");
             return E_FAIL;
         }
@@ -678,50 +673,50 @@ void FreeCarVertexBuffer(void) {
         pCarVB->Release(), pCarVB = NULL;
 }
 
-void DrawCar(IDirect3DDevice9* pd3dDevice) {
-    pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
-    pd3dDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+void DrawCar(RenderDevice* pDevice) {
+    pDevice->SetRenderState(RS_ZENABLE, TRUE);
+    pDevice->SetRenderState(RS_CULLMODE, CULL_CCW);
 
-    pd3dDevice->SetStreamSource(0, pCarVB, 0, sizeof(UTVERTEX));
-    pd3dDevice->SetFVF(D3DFVF_UTVERTEX);
-    pd3dDevice->DrawPrimitive(D3DPT_TRIANGLELIST, 0, numCarVertices / 3); // 3 points per triangle
+    pDevice->SetStreamSource(0, pCarVB, 0, sizeof(UTVERTEX));
+    pDevice->SetFVF(FVF_UTVERTEX);
+    pDevice->DrawPrimitive(PT_TRIANGLELIST, 0, numCarVertices / 3); // 3 points per triangle
 }
 
 struct TRANSFORMEDTEXVERTEX {
     FLOAT x, y, z, rhw; // The transformed position for the vertex.
     FLOAT u, v;         // Texture
 };
-#define D3DFVF_TRANSFORMEDTEXVERTEX (D3DFVF_XYZRHW | D3DFVF_TEX1)
+#define FVF_TRANSFORMEDTEXVERTEX (FVF_XYZRHW | FVF_TEX1)
 
 struct TRANSFORMEDCOLVERTEX {
     FLOAT x, y, z, rhw; // The transformed position for the vertex.
     DWORD color;        // Color
 };
-#define D3DFVF_TRANSFORMEDCOLVERTEX (D3DFVF_XYZRHW | D3DFVF_DIFFUSE)
+#define FVF_TRANSFORMEDCOLVERTEX (FVF_XYZRHW | FVF_DIFFUSE)
 
-static IDirect3DVertexBuffer9 *pCockpitVB = NULL, *pSpeedBarCB = NULL;
+static VertexBuffer *pCockpitVB = NULL, *pSpeedBarCB = NULL;
 #define MAX_COCKIPTVB 512
 static int old_speedbar = -1;
 static int old_leftwheel = -1, old_rightwheel = -1;
 
-extern IDirect3DTexture9* g_pAtlas;
+extern GpuTexture* g_pAtlas;
 extern long front_left_amount_below_road, front_right_amount_below_road;
 extern long leftwheel_angle, rightwheel_angle;
 extern long boost_activated;
 extern long new_damage;
 extern long nholes;
 
-HRESULT CreateCockpitVertexBuffer(IDirect3DDevice9* pd3dDevice) {
+HRESULT CreateCockpitVertexBuffer(RenderDevice* pDevice) {
     if (pCockpitVB == NULL) {
-        if (FAILED(pd3dDevice->CreateVertexBuffer(MAX_COCKIPTVB * sizeof(TRANSFORMEDTEXVERTEX), D3DUSAGE_WRITEONLY,
-                                                  D3DFVF_TRANSFORMEDTEXVERTEX, D3DPOOL_DEFAULT, &pCockpitVB, NULL))) {
+        if (FAILED(pDevice->CreateVertexBuffer(MAX_COCKIPTVB * sizeof(TRANSFORMEDTEXVERTEX), VB_USAGE_WRITEONLY,
+                                                  FVF_TRANSFORMEDTEXVERTEX, POOL_DEFAULT, &pCockpitVB, NULL))) {
             OutputDebugStringW(L"ERROR: Failed to create cockpit vertex buffer\n");
             return E_FAIL;
         }
     }
     if (pSpeedBarCB == NULL) {
-        if (FAILED(pd3dDevice->CreateVertexBuffer(4 * sizeof(TRANSFORMEDCOLVERTEX), D3DUSAGE_WRITEONLY,
-                                                  D3DFVF_TRANSFORMEDCOLVERTEX, D3DPOOL_DEFAULT, &pSpeedBarCB, NULL))) {
+        if (FAILED(pDevice->CreateVertexBuffer(4 * sizeof(TRANSFORMEDCOLVERTEX), VB_USAGE_WRITEONLY,
+                                                  FVF_TRANSFORMEDCOLVERTEX, POOL_DEFAULT, &pSpeedBarCB, NULL))) {
             OutputDebugStringW(L"ERROR: Failed to create speed bar vertex buffer\n");
             return E_FAIL;
         }
@@ -794,7 +789,7 @@ static void AddQuad(TRANSFORMEDTEXVERTEX* pVertices, float x1, float y1, float x
 extern int GL_MSAA;
 #endif
 
-void DrawCockpit(IDirect3DDevice9* pd3dDevice) {
+void DrawCockpit(RenderDevice* pDevice) {
 #ifdef linux
     if (GL_MSAA)
         glDisable(GL_MULTISAMPLE);
@@ -923,49 +918,49 @@ void DrawCockpit(IDirect3DDevice9* pd3dDevice) {
         pSpeedBarCB->Unlock();
     }
 
-    pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
-    pd3dDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    pDevice->SetRenderState(RS_ZENABLE, FALSE);
+    pDevice->SetRenderState(RS_CULLMODE, CULL_NONE);
 
-    pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-    pd3dDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    pd3dDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    pDevice->SetRenderState(RS_ALPHABLENDENABLE, TRUE);
+    pDevice->SetRenderState(RS_SRCBLEND, BLEND_SRCALPHA);
+    pDevice->SetRenderState(RS_DESTBLEND, BLEND_INVSRCALPHA);
 
-    pd3dDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_BLENDDIFFUSEALPHA);
-    pd3dDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-    pd3dDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    pd3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTSS_COLORARG1);
-    pd3dDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-    pd3dDevice->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    pDevice->SetTextureStageState(0, TSS_ALPHAOP, TOP_BLENDDIFFUSEALPHA);
+    pDevice->SetTextureStageState(0, TSS_ALPHAARG1, TA_TEXTURE);
+    pDevice->SetTextureStageState(0, TSS_ALPHAARG2, TA_DIFFUSE);
+    pDevice->SetTextureStageState(0, TSS_COLOROP, TSS_COLORARG1);
+    pDevice->SetTextureStageState(0, TSS_COLORARG1, TA_TEXTURE);
+    pDevice->SetTextureStageState(1, TSS_COLOROP, TOP_DISABLE);
 #ifdef WIN32
-    pd3dDevice->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-    pd3dDevice->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+    pDevice->SetSamplerState(0, SAMP_ADDRESSU, TADDRESS_CLAMP);
+    pDevice->SetSamplerState(0, SAMP_ADDRESSV, TADDRESS_CLAMP);
 #endif
     // Draw Cockpit
-    pd3dDevice->SetTexture(0, g_pAtlas);
+    pDevice->SetTexture(0, g_pAtlas);
     // Cockpit should use point filtering (pixel sharp), not bilinear.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    pd3dDevice->SetStreamSource(0, pCockpitVB, 0, sizeof(TRANSFORMEDTEXVERTEX));
+    pDevice->SetStreamSource(0, pCockpitVB, 0, sizeof(TRANSFORMEDTEXVERTEX));
 
-    pd3dDevice->SetFVF(D3DFVF_TRANSFORMEDTEXVERTEX);
-    pd3dDevice->DrawPrimitive(D3DPT_TRIANGLELIST, 0, cockpit_vtx / 3); // 3 points per triangle
+    pDevice->SetFVF(FVF_TRANSFORMEDTEXVERTEX);
+    pDevice->DrawPrimitive(PT_TRIANGLELIST, 0, cockpit_vtx / 3); // 3 points per triangle
 
     // Draw Speed bar
-    pd3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_DISABLE);
-    pd3dDevice->SetStreamSource(0, pSpeedBarCB, 0, sizeof(TRANSFORMEDCOLVERTEX));
+    pDevice->SetTextureStageState(0, TSS_COLOROP, TOP_DISABLE);
+    pDevice->SetStreamSource(0, pSpeedBarCB, 0, sizeof(TRANSFORMEDCOLVERTEX));
 
-    pd3dDevice->SetFVF(D3DFVF_TRANSFORMEDCOLVERTEX);
-    pd3dDevice->DrawPrimitive(D3DPT_TRIANGLEFAN, 0, 2); // 3 points per triangle
+    pDevice->SetFVF(FVF_TRANSFORMEDCOLVERTEX);
+    pDevice->DrawPrimitive(PT_TRIANGLEFAN, 0, 2); // 3 points per triangle
 
     // Restore default filtering for non-cockpit atlas usage.
-    pd3dDevice->SetTexture(0, g_pAtlas);
+    pDevice->SetTexture(0, g_pAtlas);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-    pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
-    pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-    //pd3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    pDevice->SetRenderState(RS_ALPHABLENDENABLE, FALSE);
+    pDevice->SetRenderState(RS_ZENABLE, TRUE);
+    pDevice->SetRenderState(RS_ALPHABLENDENABLE, FALSE);
+    //pDevice->SetTextureStageState(0, TSS_COLOROP, TOP_DISABLE);
 #ifdef linux
     if (GL_MSAA)
         glEnable(GL_MULTISAMPLE);

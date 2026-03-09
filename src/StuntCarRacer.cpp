@@ -64,7 +64,7 @@ IDirectSoundBuffer8* SmashSoundBuffer = NULL;
 IDirectSoundBuffer8* OffRoadSoundBuffer = NULL;
 IDirectSoundBuffer8* EngineSoundBuffers[8] = {NULL};
 
-IDirect3DTexture9* g_pAtlas = NULL;
+GpuTexture* g_pAtlas = NULL;
 
 int wideScreen = 0;
 
@@ -381,7 +381,7 @@ void GetScreenDimensions(long* screen_width, long* screen_height) {
     *screen_width = (wideScreen) ? 800 : 640;
     *screen_height = 480;
 #else
-    const D3DSURFACE_DESC* desc;
+    const SurfaceDesc* desc;
     desc = GetBackBufferSurfaceDesc();
 
     *screen_width = desc->Width;
@@ -458,7 +458,7 @@ static PALETTEENTRY SCPalette[NUM_PALETTE_ENTRIES] = {
 DWORD SCRGB(long colour_index) // return full RGB value
 {
     return (
-        D3DCOLOR_XRGB(SCPalette[colour_index].peRed, SCPalette[colour_index].peGreen, SCPalette[colour_index].peBlue));
+        COLOR_RGB(SCPalette[colour_index].peRed, SCPalette[colour_index].peGreen, SCPalette[colour_index].peBlue));
 }
 
 DWORD Fill_Colour, Line_Colour;
@@ -475,7 +475,7 @@ void SetSolidColour(long colour_index) {
         for (i = 0; i < NUM_PALETTE_ENTRIES; i++)
             {
             // reduce R/G/B to 5/8 of original
-            reducedSCPalette[i] = D3DCOLOR_XRGB((5*SCPalette[i].peRed)/8,
+            reducedSCPalette[i] = COLOR_RGB((5*SCPalette[i].peRed)/8,
                                            (5*SCPalette[i].peGreen)/8,
                                            (5*SCPalette[i].peBlue)/8);
             }
@@ -565,23 +565,23 @@ void CloseFonts() {
 }
 void LoadTextures() {
     if (!g_pAtlas)
-        g_pAtlas = new IDirect3DTexture9();
+        g_pAtlas = new GpuTexture();
     g_pAtlas->LoadTexture("data/Bitmap/atlas.png");
     InitAtlasCoord();
     printf("Texture loaded\n");
 }
-void CreateBuffers(IDirect3DDevice9* pd3dDevice) {
-    if (CreatePolygonVertexBuffer(pd3dDevice) != S_OK)
+void CreateBuffers(RenderDevice* pDevice) {
+    if (CreatePolygonVertexBuffer(pDevice) != S_OK)
         printf("Error creating PolygonVertexBuffer\n");
-    if (CreateTrackVertexBuffer(pd3dDevice) != S_OK)
+    if (CreateTrackVertexBuffer(pDevice) != S_OK)
         printf("Error creating TrackVertexBuffer\n");
-    if (CreateGroundPlaneVertexBuffer(pd3dDevice) != S_OK)
+    if (CreateGroundPlaneVertexBuffer(pDevice) != S_OK)
         printf("Error creating GroundPlaneVertexBuffer\n");
-    if (CreateShadowVertexBuffer(pd3dDevice) != S_OK)
+    if (CreateShadowVertexBuffer(pDevice) != S_OK)
         printf("Error creating ShadowVertexBuffer\n");
-    if (CreateCarVertexBuffer(pd3dDevice) != S_OK)
+    if (CreateCarVertexBuffer(pDevice) != S_OK)
         printf("Error creating CarVertexBuffer\n");
-    if (CreateCockpitVertexBuffer(pd3dDevice) != S_OK)
+    if (CreateCockpitVertexBuffer(pDevice) != S_OK)
         printf("Error creating CarVertexBuffer\n");
 }
 /*    ======================================================================================= */
@@ -739,14 +739,14 @@ static void CalcGameViewpoint(void) {
 //--------------------------------------------------------------------------------------
 // Handle updates to the scene
 //--------------------------------------------------------------------------------------
-static D3DXMATRIX matWorldTrack, matWorldCar, matWorldOpponentsCar;
+static glm::mat4 matWorldTrack, matWorldCar, matWorldOpponentsCar;
 
 static float FixedPointToWorldCoord(long value) {
     return static_cast<float>(value) / static_cast<float>(1 << LOG_PRECISION);
 }
 
 static float PlayerAngleToRadians(long angle) {
-    return (static_cast<float>(angle) * 2.0f * D3DX_PI) / 65536.0f;
+    return (static_cast<float>(angle) * 2.0f * PI) / 65536.0f;
 }
 
 static long WrappedAngleDelta(long from, long to) {
@@ -762,14 +762,14 @@ static float LerpWrappedAngleUnits(long from, long to, float alpha) {
 
 static float LerpWrappedPlayerAngle(long from, long to, float alpha) {
     const float interpolated = LerpWrappedAngleUnits(from, to, alpha);
-    return (interpolated * 2.0f * D3DX_PI) / 65536.0f;
+    return (interpolated * 2.0f * PI) / 65536.0f;
 }
 
 static float NormalizeRadians(float angle) {
-    while (angle > D3DX_PI)
-        angle -= 2.0f * D3DX_PI;
-    while (angle < -D3DX_PI)
-        angle += 2.0f * D3DX_PI;
+    while (angle > PI)
+        angle -= 2.0f * PI;
+    while (angle < -PI)
+        angle += 2.0f * PI;
     return angle;
 }
 
@@ -788,20 +788,20 @@ static float LerpLong(long from, long to, float alpha) {
     return static_cast<float>(from) + (static_cast<float>(to) - static_cast<float>(from)) * alpha;
 }
 
-static void BuildCarWorldTransform(D3DXMATRIX* out, float x, float y, float z, float xa, float ya, float za,
+static void BuildCarWorldTransform(glm::mat4* out, float x, float y, float z, float xa, float ya, float za,
                                    float yOffset) {
-    D3DXMATRIX matRot, matTemp, matTrans;
+    glm::mat4 matRot, matTemp, matTrans;
 
-    D3DXMatrixIdentity(&matRot);
-    D3DXMatrixRotationZ(&matTemp, za);
-    D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-    D3DXMatrixRotationX(&matTemp, xa);
-    D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-    D3DXMatrixRotationY(&matTemp, ya);
-    D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+    mat4Identity(&matRot);
+    mat4RotationZ(&matTemp, za);
+    mat4Multiply(&matRot, &matRot, &matTemp);
+    mat4RotationX(&matTemp, xa);
+    mat4Multiply(&matRot, &matRot, &matTemp);
+    mat4RotationY(&matTemp, ya);
+    mat4Multiply(&matRot, &matRot, &matTemp);
 
-    D3DXMatrixTranslation(&matTrans, x, -y + yOffset, z);
-    D3DXMatrixMultiply(out, &matRot, &matTrans);
+    mat4Translation(&matTrans, x, -y + yOffset, z);
+    mat4Multiply(out, &matRot, &matTrans);
 }
 
 static void CapturePreviousCarState(void) {
@@ -832,7 +832,7 @@ static void CapturePreviousCarState(void) {
     have_prev_car_state = true;
 }
 
-static void UpdateInterpolatedCarTransforms(IDirect3DDevice9* pd3dDevice, float alpha) {
+static void UpdateInterpolatedCarTransforms(RenderDevice* pDevice, float alpha) {
     if (!have_prev_car_state)
         CapturePreviousCarState();
 
@@ -867,8 +867,8 @@ static void UpdateInterpolatedCarTransforms(IDirect3DDevice9* pd3dDevice, float 
     BuildCarWorldTransform(&matWorldOpponentsCar, opponentX, opponentY, opponentZ, opponentXa, opponentYa, opponentZa,
                            VCAR_HEIGHT / 4.0f);
 
-    D3DXMATRIX matRot, matTemp, matTrans, matView;
-    static D3DXVECTOR3 vUpVec(0.0f, 1.0f, 0.0f);
+    glm::mat4 matRot, matTemp, matTrans, matView;
+    static glm::vec3 vUpVec(0.0f, 1.0f, 0.0f);
     if (GameMode == GAME_IN_PROGRESS) {
         const float viewX = LerpLong(prev_viewpoint1_x, viewpoint1_x, alpha);
         const float viewY = LerpLong(prev_viewpoint1_y, viewpoint1_y, alpha) / static_cast<float>(1 << LOG_PRECISION);
@@ -877,33 +877,33 @@ static void UpdateInterpolatedCarTransforms(IDirect3DDevice9* pd3dDevice, float 
         const float xaUnits = LerpWrappedAngleUnits(prev_viewpoint1_x_angle, viewpoint1_x_angle, alpha);
         const float yaUnits = LerpWrappedAngleUnits(prev_viewpoint1_y_angle, viewpoint1_y_angle, alpha);
         const float zaUnits = LerpWrappedAngleUnits(prev_viewpoint1_z_angle, viewpoint1_z_angle, alpha);
-        const float xa = ((-xaUnits) * 2.0f * D3DX_PI) / 65536.0f;
-        const float ya = ((-yaUnits) * 2.0f * D3DX_PI) / 65536.0f;
-        const float za = ((-zaUnits) * 2.0f * D3DX_PI) / 65536.0f;
+        const float xa = ((-xaUnits) * 2.0f * PI) / 65536.0f;
+        const float ya = ((-yaUnits) * 2.0f * PI) / 65536.0f;
+        const float za = ((-zaUnits) * 2.0f * PI) / 65536.0f;
 
-        D3DXMatrixTranslation(&matTrans, -viewX, viewY, -viewZ);
-        D3DXMatrixIdentity(&matRot);
+        mat4Translation(&matTrans, -viewX, viewY, -viewZ);
+        mat4Identity(&matRot);
 #ifdef linux
-        D3DXMatrixRotationY(&matTemp, ya + D3DX_PI);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-        D3DXMatrixRotationX(&matTemp, -xa);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-        D3DXMatrixRotationZ(&matTemp, -za);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+        mat4RotationY(&matTemp, ya + PI);
+        mat4Multiply(&matRot, &matRot, &matTemp);
+        mat4RotationX(&matTemp, -xa);
+        mat4Multiply(&matRot, &matRot, &matTemp);
+        mat4RotationZ(&matTemp, -za);
+        mat4Multiply(&matRot, &matRot, &matTemp);
 #else
-        D3DXMatrixRotationY(&matTemp, ya);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-        D3DXMatrixRotationX(&matTemp, xa);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-        D3DXMatrixRotationZ(&matTemp, za);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+        mat4RotationY(&matTemp, ya);
+        mat4Multiply(&matRot, &matRot, &matTemp);
+        mat4RotationX(&matTemp, xa);
+        mat4Multiply(&matRot, &matRot, &matTemp);
+        mat4RotationZ(&matTemp, za);
+        mat4Multiply(&matRot, &matRot, &matTemp);
 #endif
-        D3DXMatrixMultiply(&matView, &matTrans, &matRot);
+        mat4Multiply(&matView, &matTrans, &matRot);
 #ifdef linux
-        D3DXMatrixScaling(&matTrans, +1, -1, +1);
-        D3DXMatrixMultiply(&matView, &matView, &matTrans);
+        mat4Scaling(&matTrans, +1, -1, +1);
+        mat4Multiply(&matView, &matView, &matTrans);
 #endif
-        pd3dDevice->SetTransform(D3DTS_VIEW, &matView);
+        pDevice->SetTransform(TS_VIEW, &matView);
     } else if ((GameMode == TRACK_PREVIEW) || (GameMode == TRACK_MENU)) {
         const float viewX = LerpLong(prev_viewpoint1_x, viewpoint1_x, alpha);
         const float viewY = -LerpLong(prev_viewpoint1_y, viewpoint1_y, alpha) / static_cast<float>(1 << LOG_PRECISION);
@@ -911,10 +911,10 @@ static void UpdateInterpolatedCarTransforms(IDirect3DDevice9* pd3dDevice, float 
         const float lookX = LerpLong(prev_target_x, target_x, alpha);
         const float lookY = LerpLong(prev_target_y, target_y, alpha);
         const float lookZ = LerpLong(prev_target_z, target_z, alpha);
-        D3DXVECTOR3 vEyePt(viewX, viewY, viewZ);
-        D3DXVECTOR3 vLookatPt(lookX, lookY, lookZ);
-        D3DXMatrixLookAtLH(&matView, &vEyePt, &vLookatPt, &vUpVec);
-        pd3dDevice->SetTransform(D3DTS_VIEW, &matView);
+        glm::vec3 vEyePt(viewX, viewY, viewZ);
+        glm::vec3 vLookatPt(lookX, lookY, lookZ);
+        mat4LookAt(&matView, &vEyePt, &vLookatPt, &vUpVec);
+        pDevice->SetTransform(TS_VIEW, &matView);
     }
 }
 
@@ -947,10 +947,10 @@ static void StopEngineSound(void) {
     }
 }
 
-void CALLBACK OnFrameMove(IDirect3DDevice9* pd3dDevice, double fTime, float fElapsedTime, void* pUserContext) {
-    static D3DXVECTOR3 vUpVec(0.0f, 1.0f, 0.0f);
+void CALLBACK OnFrameMove(RenderDevice* pDevice, double fTime, float fElapsedTime, void* pUserContext) {
+    static glm::vec3 vUpVec(0.0f, 1.0f, 0.0f);
     DWORD input = (GameMode == GAME_IN_PROGRESS) ? g_logicInput : lastInput;
-    D3DXMATRIX matRot, matTemp, matTrans, matView;
+    glm::mat4 matRot, matTemp, matTrans, matView;
     bFrameMoved = FALSE;
 
     if (GameMode == GAME_OVER) {
@@ -1023,18 +1023,18 @@ void CALLBACK OnFrameMove(IDirect3DDevice9* pd3dDevice, double fTime, float fEla
         target_z >>= LOG_PRECISION;
 
         // Set the track's world transform matrix
-        D3DXMatrixIdentity(&matWorldTrack);
+        mat4Identity(&matWorldTrack);
 
         //
         // Set the view transform matrix
         //
         // Set the eye point
-        D3DXVECTOR3 vEyePt(static_cast<float>(viewpoint1_x), static_cast<float>(-viewpoint1_y >> LOG_PRECISION),
+        glm::vec3 vEyePt(static_cast<float>(viewpoint1_x), static_cast<float>(-viewpoint1_y >> LOG_PRECISION),
                            static_cast<float>(viewpoint1_z));
         // Set the lookat point
-        D3DXVECTOR3 vLookatPt(static_cast<float>(target_x), static_cast<float>(target_y), static_cast<float>(target_z));
-        D3DXMatrixLookAtLH(&matView, &vEyePt, &vLookatPt, &vUpVec);
-        pd3dDevice->SetTransform(D3DTS_VIEW, &matView);
+        glm::vec3 vLookatPt(static_cast<float>(target_x), static_cast<float>(target_y), static_cast<float>(target_z));
+        mat4LookAt(&matView, &vEyePt, &vLookatPt, &vUpVec);
+        pDevice->SetTransform(TS_VIEW, &matView);
     } else if (GameMode == GAME_IN_PROGRESS) {
         CalcGameViewpoint();
 
@@ -1044,7 +1044,7 @@ void CALLBACK OnFrameMove(IDirect3DDevice9* pd3dDevice, double fTime, float fEla
         viewpoint1_z >>= LOG_PRECISION;
 
         // Set the track's world transform matrix
-        D3DXMatrixIdentity(&matWorldTrack);
+        mat4Identity(&matWorldTrack);
 
         // Set the opponent's car world transform matrix
         /*
@@ -1070,35 +1070,35 @@ void CALLBACK OnFrameMove(IDirect3DDevice9* pd3dDevice, double fTime, float fEla
         // Set the view transform matrix
         //
         // Produce the translation matrix
-        D3DXMatrixTranslation(&matTrans, static_cast<float>(-viewpoint1_x),
+        mat4Translation(&matTrans, static_cast<float>(-viewpoint1_x),
                               static_cast<float>(viewpoint1_y >> LOG_PRECISION), static_cast<float>(-viewpoint1_z));
-        D3DXMatrixIdentity(&matRot);
-        float xa = ((static_cast<float>(-viewpoint1_x_angle) * 2 * D3DX_PI) / 65536.0f);
-        float ya = ((static_cast<float>(-viewpoint1_y_angle) * 2 * D3DX_PI) / 65536.0f);
-        float za = ((static_cast<float>(-viewpoint1_z_angle) * 2 * D3DX_PI) / 65536.0f);
+        mat4Identity(&matRot);
+        float xa = ((static_cast<float>(-viewpoint1_x_angle) * 2 * PI) / 65536.0f);
+        float ya = ((static_cast<float>(-viewpoint1_y_angle) * 2 * PI) / 65536.0f);
+        float za = ((static_cast<float>(-viewpoint1_z_angle) * 2 * PI) / 65536.0f);
         // Produce and combine the rotation matrices
 #ifdef linux
-        D3DXMatrixRotationY(&matTemp, ya + D3DX_PI);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-        D3DXMatrixRotationX(&matTemp, -xa);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-        D3DXMatrixRotationZ(&matTemp, -za);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+        mat4RotationY(&matTemp, ya + PI);
+        mat4Multiply(&matRot, &matRot, &matTemp);
+        mat4RotationX(&matTemp, -xa);
+        mat4Multiply(&matRot, &matRot, &matTemp);
+        mat4RotationZ(&matTemp, -za);
+        mat4Multiply(&matRot, &matRot, &matTemp);
 #else
-        D3DXMatrixRotationY(&matTemp, ya);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-        D3DXMatrixRotationX(&matTemp, xa);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
-        D3DXMatrixRotationZ(&matTemp, za);
-        D3DXMatrixMultiply(&matRot, &matRot, &matTemp);
+        mat4RotationY(&matTemp, ya);
+        mat4Multiply(&matRot, &matRot, &matTemp);
+        mat4RotationX(&matTemp, xa);
+        mat4Multiply(&matRot, &matRot, &matTemp);
+        mat4RotationZ(&matTemp, za);
+        mat4Multiply(&matRot, &matRot, &matTemp);
 #endif
         // Combine the rotation and translation matrices to complete the world matrix
-        D3DXMatrixMultiply(&matView, &matTrans, &matRot);
+        mat4Multiply(&matView, &matTrans, &matRot);
 #ifdef linux
-        D3DXMatrixScaling(&matTrans, +1, -1, +1);
-        D3DXMatrixMultiply(&matView, &matView, &matTrans);
+        mat4Scaling(&matTrans, +1, -1, +1);
+        mat4Multiply(&matView, &matView, &matTrans);
 #endif
-        pd3dDevice->SetTransform(D3DTS_VIEW, &matView);
+        pDevice->SetTransform(TS_VIEW, &matView);
     }
 
     render_backdrop_viewpoint_y = viewpoint1_y;
@@ -1139,7 +1139,7 @@ static void HandleTrackMenu(TextHelper& txtHelper) {
     lastMenuOption = i + FIRSTMENU - 1;
 
     // output instructions
-    const D3DSURFACE_DESC* pd3dsdBackBuffer = GetBackBufferSurfaceDesc();
+    const SurfaceDesc* pd3dsdBackBuffer = GetBackBufferSurfaceDesc();
     txtHelper.SetInsertionPos(static_cast<int>((2 + (wideScreen ? 10 : 0)) * textScale),
                               static_cast<int>(pd3dsdBackBuffer->Height - 15 * 8 * textScale));
     txtHelper.DrawFormattedTextLine(L"Current track - " STRING L".  Press 'S' to select, Escape to quit",
@@ -1200,7 +1200,7 @@ static void HandleTrackMenu(TextHelper& txtHelper) {
 
 static void HandleTrackPreview(TextHelper& txtHelper) {
     // output instructions
-    const D3DSURFACE_DESC* pd3dsdBackBuffer = GetBackBufferSurfaceDesc();
+    const SurfaceDesc* pd3dsdBackBuffer = GetBackBufferSurfaceDesc();
     float textScale = GetTextScale();
     txtHelper.SetInsertionPos(static_cast<int>((2 + (wideScreen ? 10 : 0)) * textScale),
                               static_cast<int>(pd3dsdBackBuffer->Height - 15 * 9 * textScale));
@@ -1279,7 +1279,7 @@ void RenderText(double fTime) {
 
     // Output statistics
     txtHelper.Begin();
-    txtHelper.SetForegroundColor(D3DXCOLOR(1.0f, 1.0f, 0.0f, 1.0f));
+    txtHelper.SetForegroundColor(glm::vec4(1.0f, 1.0f, 0.0f, 1.0f));
     if (bShowStats) {
         txtHelper.SetInsertionPos(static_cast<int>((2 + (wideScreen ? 10 : 0)) * textScale), 0);
         txtHelper.DrawFormattedTextLine(L"fTime: %0.1f  sin(fTime): %0.4f", fTime, sin(fTime));
@@ -1311,7 +1311,7 @@ void RenderText(double fTime) {
     case GAME_IN_PROGRESS:
     case GAME_OVER:
         // Show car speed, damage and race details
-        const D3DSURFACE_DESC* pd3dsdBackBuffer = GetBackBufferSurfaceDesc();
+        const SurfaceDesc* pd3dsdBackBuffer = GetBackBufferSurfaceDesc();
         WCHAR lapText[3] = L"  ";
         // Output opponent's name for four seconds at race start
         if (((GetTimeSeconds() - gameStartTime) < 4.0) && (opponentsID != NO_OPPONENT)) {
@@ -1323,7 +1323,7 @@ void RenderText(double fTime) {
                                   static_cast<int>(pd3dsdBackBuffer->Height - 15 * 2 * textScale));
         if (lapNumber[PLAYER] > 0)
             StringCchPrintf(lapText, 3, L"%d", lapNumber[PLAYER]);
-        txtHelper.SetForegroundColor(D3DXCOLOR(0.0f, 0.0f, 0.0f, 1.0f));
+        txtHelper.SetForegroundColor(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 
         // Position text using base 800x480 coordinates, then scale
         float base_height = static_cast<float>(BASE_HEIGHT);
@@ -1375,9 +1375,9 @@ void RenderText(double fTime) {
                 long intTime = static_cast<long>(diffTime);
                 // Text flashes white/black, changing every half second
                 if ((diffTime - (double)intTime) < 0.5)
-                    txtHelperLarge.SetForegroundColor(D3DXCOLOR(1.0f, 1.0f, 1.0f, 1.0f));
+                    txtHelperLarge.SetForegroundColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
                 else
-                    txtHelperLarge.SetForegroundColor(D3DXCOLOR(0.0f, 0.0f, 0.0f, 1.0f));
+                    txtHelperLarge.SetForegroundColor(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 
                 txtHelperLarge.SetInsertionPos(static_cast<int>((250 + (wideScreen ? 80 : 0)) * textScale),
                                                static_cast<int>(pd3dsdBackBuffer->Height - 25 * 12 * textScale));
@@ -1399,31 +1399,31 @@ void RenderText(double fTime) {
 #ifdef NOT_USED
 //-----------------------------------------------------------------------------
 // Name: SetupLights()
-// Desc: Sets up the lights and materials for the scene.
+// Desc: Sets up the lights and materials for the scene (OpenGL).
 //-----------------------------------------------------------------------------
-void SetupLights(IDirect3DDevice9* pd3dDevice) {
-    D3DXVECTOR3 vecDir;
-    D3DLIGHT9 light;
+struct LightDesc { int Type; glm::vec3 Position, Direction; float Range; float Diffuse[4]; };
+struct MaterialDesc { float Diffuse[4], Ambient[4]; };
+void SetupLights(RenderDevice* pDevice) {
+    glm::vec3 vecDir;
+    LightDesc light;
 
-    // Set up a material. The material here just has the diffuse and ambient
-    // colors set to white. Note that only one material can be used at a time.
-    D3DMATERIAL9 mtrl;
-    ZeroMemory(&mtrl, sizeof(D3DMATERIAL9));
-    mtrl.Diffuse.r = mtrl.Ambient.r = 1.0f;
-    mtrl.Diffuse.g = mtrl.Ambient.g = 1.0f;
-    mtrl.Diffuse.b = mtrl.Ambient.b = 1.0f;
-    mtrl.Diffuse.a = mtrl.Ambient.a = 1.0f;
-    pd3dDevice->SetMaterial(&mtrl);
+    MaterialDesc mtrl;
+    ZeroMemory(&mtrl, sizeof(MaterialDesc));
+    mtrl.Diffuse[0] = mtrl.Ambient[0] = 1.0f;
+    mtrl.Diffuse[1] = mtrl.Ambient[1] = 1.0f;
+    mtrl.Diffuse[2] = mtrl.Ambient[2] = 1.0f;
+    mtrl.Diffuse[3] = mtrl.Ambient[3] = 1.0f;
+    (void)pDevice; (void)mtrl; /* SetMaterial not in RenderDevice */
 
     /*
     // Set up a white spotlight
-    ZeroMemory( &light, sizeof(D3DLIGHT9) );
-    light.Type       = D3DLIGHT_SPOT;
+    ZeroMemory( &light, sizeof(LightDesc) );
+    light.Type       = 3; /* spot */
     light.Diffuse.r  = 1.0f;
     light.Diffuse.g  = 1.0f;
     light.Diffuse.b  = 1.0f;
     // Set position vector
-//    light.Position = D3DXVECTOR3(32768.0f, 1000.0f, 32768.0f);
+//    light.Position = glm::vec3(32768.0f, 1000.0f, 32768.0f);
     if (GameMode == TRACK_MENU)
     {
         light.Position.x = 32768.0f;
@@ -1437,8 +1437,8 @@ void SetupLights(IDirect3DDevice9* pd3dDevice) {
         light.Position.z = (player1_z>>LOG_PRECISION);
     }
     // Set direction vector to simulate sunlight
-    vecDir = D3DXVECTOR3(0.0f, -1.0f, 0.0f);
-    D3DXVec3Normalize( (D3DXVECTOR3*)&light.Direction, &vecDir );
+    vecDir = glm::vec3(0.0f, -1.0f, 0.0f);
+    light.Direction = glm::normalize(vecDir);
     light.Range       = 32768;//((float)sqrt(FLT_MAX));
     light.Falloff = 1.0f;
     light.Attenuation0 = 1.0f;
@@ -1446,43 +1446,21 @@ void SetupLights(IDirect3DDevice9* pd3dDevice) {
     light.Attenuation2 = 0.0f;
     light.Theta = PI/3;
     light.Phi = PI/2;
-    pd3dDevice->SetLight( 0, &light );
-    pd3dDevice->LightEnable( 0, TRUE );
+    pDevice->SetLight( 0, &light );
+    pDevice->LightEnable( 0, TRUE );
     */
 
-    /**/
-    // Set up four white, directional lights
-    ZeroMemory(&light, sizeof(D3DLIGHT9));
-    light.Type = D3DLIGHT_DIRECTIONAL;
-    light.Diffuse.r = 0.33f;
-    light.Diffuse.g = 0.33f;
-    light.Diffuse.b = 0.33f;
-    // Set direction vector to simulate sunlight
-    vecDir = D3DXVECTOR3(0.2f, -0.7f, 0.5f);
-    D3DXVec3Normalize((D3DXVECTOR3*)&light.Direction, &vecDir);
+    // Set up four directional lights (OpenGL would use glLight*)
+    ZeroMemory(&light, sizeof(LightDesc));
+    light.Type = 2; /* directional */
+    light.Diffuse[0] = light.Diffuse[1] = light.Diffuse[2] = 0.33f; light.Diffuse[3] = 1.0f;
     light.Range = 10000.0f;
-    pd3dDevice->SetLight(1, &light);
-    pd3dDevice->LightEnable(1, TRUE);
-    /**/
-    vecDir = D3DXVECTOR3(0.2f, -0.7f, -0.5f);
-    D3DXVec3Normalize((D3DXVECTOR3*)&light.Direction, &vecDir);
-    pd3dDevice->SetLight(2, &light);
-    pd3dDevice->LightEnable(2, TRUE);
-    /**/
-    vecDir = D3DXVECTOR3(-0.2f, -0.7f, 0.5f);
-    D3DXVec3Normalize((D3DXVECTOR3*)&light.Direction, &vecDir);
-    pd3dDevice->SetLight(3, &light);
-    pd3dDevice->LightEnable(3, TRUE);
-    /**/
-    vecDir = D3DXVECTOR3(-0.2f, -0.7f, -0.5f);
-    D3DXVec3Normalize((D3DXVECTOR3*)&light.Direction, &vecDir);
-    pd3dDevice->SetLight(4, &light);
-    pd3dDevice->LightEnable(4, TRUE);
-    /**/
-
-    // Finally, turn on some ambient light and turn lighting on
-    pd3dDevice->SetRenderState(D3DRS_AMBIENT, 0x00303030);
-    pd3dDevice->SetRenderState(D3DRS_LIGHTING, TRUE);
+    light.Direction = glm::normalize(glm::vec3(0.2f, -0.7f, 0.5f));
+    light.Direction = glm::normalize(glm::vec3(0.2f, -0.7f, -0.5f));
+    light.Direction = glm::normalize(glm::vec3(-0.2f, -0.7f, 0.5f));
+    light.Direction = glm::normalize(glm::vec3(-0.2f, -0.7f, -0.5f));
+    pDevice->SetRenderState(RS_AMBIENT, 0x00303030);
+    pDevice->SetRenderState(RS_LIGHTING, TRUE);
 }
 #endif
 
@@ -1490,31 +1468,31 @@ void SetupLights(IDirect3DDevice9* pd3dDevice) {
 // Render the scene
 //--------------------------------------------------------------------------------------
 
-void CALLBACK OnFrameRender(IDirect3DDevice9* pd3dDevice, double fTime, float fElapsedTime, void* pUserContext) {
+void CALLBACK OnFrameRender(RenderDevice* pDevice, double fTime, float fElapsedTime, void* pUserContext) {
     HRESULT hr;
 
     //    // Clear the render target and the zbuffer
-    //    V( pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, D3DCOLOR_ARGB(0, 45, 50, 170), 1.0f, 0) );
+    //    V( pDevice->Clear(0, NULL, CLEAR_TARGET | CLEAR_ZBUFFER, COLOR_RGB(0, 45, 50, 170), 1.0f, 0) );
 
     // Clear the zbuffer
-    V(pd3dDevice->Clear(0, NULL, D3DCLEAR_ZBUFFER, 0, 1.0f, 0));
+    V(pDevice->Clear(0, NULL, CLEAR_ZBUFFER, 0, 1.0f, 0));
 
     // Render the scene
-    if (SUCCEEDED(pd3dDevice->BeginScene())) {
+    if (SUCCEEDED(pDevice->BeginScene())) {
         // Disable Z buffer and polygon culling, ready for DrawBackdrop()
-        pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
-        pd3dDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+        pDevice->SetRenderState(RS_ZENABLE, FALSE);
+        pDevice->SetRenderState(RS_CULLMODE, CULL_NONE);
 
         // Draw Backdrop
         DrawBackdrop(render_backdrop_viewpoint_y, render_backdrop_viewpoint_x_angle, render_backdrop_viewpoint_y_angle,
                      render_backdrop_viewpoint_z_angle);
 
-        //        SetupLights(pd3dDevice);
+        //        SetupLights(pDevice);
 
         // Draw Track
-        pd3dDevice->SetTransform(D3DTS_WORLD, &matWorldTrack);
-        DrawGroundPlane(pd3dDevice);
-        DrawTrack(pd3dDevice);
+        pDevice->SetTransform(TS_WORLD, &matWorldTrack);
+        DrawGroundPlane(pDevice);
+        DrawTrack(pDevice);
 
         switch (GameMode) {
         case TRACK_MENU:
@@ -1522,23 +1500,23 @@ void CALLBACK OnFrameRender(IDirect3DDevice9* pd3dDevice, double fTime, float fE
 
         case TRACK_PREVIEW:
             // Draw Opponent's Car
-            pd3dDevice->SetTransform(D3DTS_WORLD, &matWorldOpponentsCar);
-            DrawCar(pd3dDevice);
+            pDevice->SetTransform(TS_WORLD, &matWorldOpponentsCar);
+            DrawCar(pDevice);
             break;
 
         case GAME_IN_PROGRESS:
         case GAME_OVER:
             // Draw Opponent's Car
-            pd3dDevice->SetTransform(D3DTS_WORLD, &matWorldOpponentsCar);
-            DrawCar(pd3dDevice);
+            pDevice->SetTransform(TS_WORLD, &matWorldOpponentsCar);
+            DrawCar(pDevice);
 
             if (bOutsideView) {
                 // Draw Player1's Car
-                pd3dDevice->SetTransform(D3DTS_WORLD, &matWorldCar);
-                DrawCar(pd3dDevice);
+                pDevice->SetTransform(TS_WORLD, &matWorldCar);
+                DrawCar(pDevice);
             } else {
                 // draw cockpit...
-                DrawCockpit(pd3dDevice);
+                DrawCockpit(pDevice);
             }
             break;
         }
@@ -1555,7 +1533,7 @@ void CALLBACK OnFrameRender(IDirect3DDevice9* pd3dDevice, double fTime, float fE
         RenderText(fTime);
 
         // End the scene
-        pd3dDevice->EndScene();
+        pDevice->EndScene();
     }
 }
 
@@ -1896,7 +1874,7 @@ bool process_events() {
     return true;
 }
 
-IDirect3DDevice9 pd3dDevice;
+RenderDevice pDevice;
 #ifdef USE_SDL2
 SDL_Window* window = NULL;
 #endif
@@ -1934,10 +1912,10 @@ static void ApplyWindowLayout(int windowWidth, int windowHeight, bool logLayout)
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    D3DXMATRIX matProj;
+    glm::mat4 matProj;
     FLOAT fAspect = virtualWidth / virtualHeight;
-    D3DXMatrixPerspectiveFovLH(&matProj, D3DX_PI / 4, fAspect, 0.5f, FURTHEST_Z);
-    pd3dDevice.SetTransform(D3DTS_PROJECTION, &matProj);
+    mat4PerspectiveFov(&matProj, PI / 4, fAspect, 0.5f, FURTHEST_Z);
+    pDevice.SetTransform(TS_PROJECTION, &matProj);
 
     if (logLayout) {
         printf("Display mode: %s, Scale: %.2f, Viewport: %dx%d @ (%d,%d)\n", wideScreen ? "Widescreen" : "Standard",
@@ -1947,7 +1925,7 @@ static void ApplyWindowLayout(int windowWidth, int windowHeight, bool logLayout)
 
 static void RenderCurrentFrame(double frameTime, float frameDelta) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    OnFrameRender(&pd3dDevice, frameTime, frameDelta, NULL);
+    OnFrameRender(&pDevice, frameTime, frameDelta, NULL);
 #ifdef USE_SDL2
     SDL_GL_SwapWindow(window);
 #else
@@ -2064,7 +2042,7 @@ static bool RunFrame(double frameTime, bool allowQuit) {
             g_logicInput = BuildLogicInputFromSamples(lastInput);
             ResetControlSamplingWindow();
             CapturePreviousCarState();
-            OnFrameMove(&pd3dDevice, frameTime, static_cast<float>(BASE_LOGIC_STEP_SECONDS), NULL);
+            OnFrameMove(&pDevice, frameTime, static_cast<float>(BASE_LOGIC_STEP_SECONDS), NULL);
             ++g_baseLogicTicksInWindow;
             ++g_baseLogicTickTotal;
             if (bFrameMoved)
@@ -2078,7 +2056,7 @@ static bool RunFrame(double frameTime, bool allowQuit) {
         const double baseProgress = (static_cast<double>(g_baseLogicSubstepCounter) + substepFraction) /
                                     static_cast<double>(PHYSICS_SUBSTEPS_PER_BASE_LOGIC);
         const float alpha = static_cast<float>(baseProgress);
-        UpdateInterpolatedCarTransforms(&pd3dDevice, alpha);
+        UpdateInterpolatedCarTransforms(&pDevice, alpha);
         if ((GameMode == TRACK_PREVIEW) || (GameMode == GAME_IN_PROGRESS))
             UpdateInterpolatedOpponentShadow(alpha);
     }
@@ -2365,7 +2343,7 @@ int main(int argc, const char** argv) {
     //    glShadeModel(GL_FLAT);
     glDisable(GL_LIGHTING);
     // Disable texture mapping by default (only DrawTrack() enables it)
-    pd3dDevice.SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    pDevice.SetTextureStageState(0, TSS_COLOROP, TOP_DISABLE);
 
     sound_init();
 
@@ -2377,7 +2355,7 @@ int main(int argc, const char** argv) {
         exit(-3);
     }
 
-    CreateBuffers(&pd3dDevice);
+    CreateBuffers(&pDevice);
 
     DSInit();
     DSSetMode();

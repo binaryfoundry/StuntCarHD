@@ -48,16 +48,16 @@
 /*    ============================== */
 /*    External function declarations */
 /*    ============================== */
-extern HRESULT CreateCarVertexBuffer(IDirect3DDevice9* pd3dDevice);
+extern HRESULT CreateCarVertexBuffer(RenderDevice* pDevice);
 
 extern void FreeCarVertexBuffer(void);
 
-extern void DrawCar(IDirect3DDevice9* pd3dDevice);
+extern void DrawCar(RenderDevice* pDevice);
 
-extern HRESULT CreateCockpitVertexBuffer(IDirect3DDevice9* pd3dDevice);
+extern HRESULT CreateCockpitVertexBuffer(RenderDevice* pDevice);
 
 extern void FreeCockpitVertexBuffer(void);
 
-extern void DrawCockpit(IDirect3DDevice9* pd3dDevice);
+extern void DrawCockpit(RenderDevice* pDevice);
 
 #endif /* _CAR */

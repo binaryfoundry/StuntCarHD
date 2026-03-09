@@ -244,7 +244,7 @@ static void OpponentPushPlayer(void);
 
 #ifdef OPPONENT_SHADOW
 extern void RemoveShadowTriangles(void);
-extern void StoreShadowTriangle(D3DXVECTOR3 v1, D3DXVECTOR3 v2, D3DXVECTOR3 v3, long other_colour);
+extern void StoreShadowTriangle(glm::vec3 v1, glm::vec3 v2, glm::vec3 v3, long other_colour);
 #endif
 
 /*    ======================================================================================= */
@@ -311,16 +311,16 @@ void UpdateInterpolatedOpponentShadow(float alpha) {
         return static_cast<float>(from) + (static_cast<float>(to) - static_cast<float>(from)) * alpha;
     };
 
-    D3DXVECTOR3 v2(LerpShadowCoord(prev_opp_shadow_rear_left.x, opp_shadow_rear_left.x),
+    glm::vec3 v2(LerpShadowCoord(prev_opp_shadow_rear_left.x, opp_shadow_rear_left.x),
                    7.0f + LerpShadowCoord(prev_opp_shadow_rear_left.y, opp_shadow_rear_left.y) / 2.0f,
                    LerpShadowCoord(prev_opp_shadow_rear_left.z, opp_shadow_rear_left.z));
-    D3DXVECTOR3 v3(LerpShadowCoord(prev_opp_shadow_rear_right.x, opp_shadow_rear_right.x),
+    glm::vec3 v3(LerpShadowCoord(prev_opp_shadow_rear_right.x, opp_shadow_rear_right.x),
                    7.0f + LerpShadowCoord(prev_opp_shadow_rear_right.y, opp_shadow_rear_right.y) / 2.0f,
                    LerpShadowCoord(prev_opp_shadow_rear_right.z, opp_shadow_rear_right.z));
-    D3DXVECTOR3 v1(LerpShadowCoord(prev_opp_shadow_front_left.x, opp_shadow_front_left.x),
+    glm::vec3 v1(LerpShadowCoord(prev_opp_shadow_front_left.x, opp_shadow_front_left.x),
                    7.0f + LerpShadowCoord(prev_opp_shadow_front_left.y, opp_shadow_front_left.y) / 2.0f,
                    LerpShadowCoord(prev_opp_shadow_front_left.z, opp_shadow_front_left.z));
-    D3DXVECTOR3 v4(LerpShadowCoord(prev_opp_shadow_front_right.x, opp_shadow_front_right.x),
+    glm::vec3 v4(LerpShadowCoord(prev_opp_shadow_front_right.x, opp_shadow_front_right.x),
                    7.0f + LerpShadowCoord(prev_opp_shadow_front_right.y, opp_shadow_front_right.y) / 2.0f,
                    LerpShadowCoord(prev_opp_shadow_front_right.z, opp_shadow_front_right.z));
 
@@ -832,15 +832,15 @@ static void CalculateOpponentsRoadWheelPositions(void) {
     // Y co-ordinates need to be divided by 4 for display, but they're
     // already /2 because are in Amiga format (i.e. not * PC_FACTOR).
     // Also add 7 to y so that shadow is slightly above road and isn't clipped as much
-    D3DXVECTOR3 v1, v2, v3, v4;
-    v2 = D3DXVECTOR3(static_cast<float>(opp_shadow_rear_left.x), 7 + static_cast<float>(opp_shadow_rear_left.y) / 2,
+    glm::vec3 v1, v2, v3, v4;
+    v2 = glm::vec3(static_cast<float>(opp_shadow_rear_left.x), 7 + static_cast<float>(opp_shadow_rear_left.y) / 2,
                      static_cast<float>(opp_shadow_rear_left.z));
-    v3 = D3DXVECTOR3(static_cast<float>(opp_shadow_rear_right.x), 7 + static_cast<float>(opp_shadow_rear_right.y) / 2,
+    v3 = glm::vec3(static_cast<float>(opp_shadow_rear_right.x), 7 + static_cast<float>(opp_shadow_rear_right.y) / 2,
                      static_cast<float>(opp_shadow_rear_right.z));
 
-    v1 = D3DXVECTOR3(static_cast<float>(opp_shadow_front_left.x), 7 + static_cast<float>(opp_shadow_front_left.y) / 2,
+    v1 = glm::vec3(static_cast<float>(opp_shadow_front_left.x), 7 + static_cast<float>(opp_shadow_front_left.y) / 2,
                      static_cast<float>(opp_shadow_front_left.z));
-    v4 = D3DXVECTOR3(static_cast<float>(opp_shadow_front_right.x), 7 + static_cast<float>(opp_shadow_front_right.y) / 2,
+    v4 = glm::vec3(static_cast<float>(opp_shadow_front_right.x), 7 + static_cast<float>(opp_shadow_front_right.y) / 2,
                      static_cast<float>(opp_shadow_front_right.z));
 
     RemoveShadowTriangles();

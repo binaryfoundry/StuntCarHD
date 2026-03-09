@@ -14,12 +14,7 @@
 
 typedef enum { TRACK_MENU = 0, TRACK_PREVIEW, GAME_IN_PROGRESS, GAME_OVER } GameModeType;
 
-/*
-// Untransformed coloured vertex
-#define D3DFVF_UTVERTEX (D3DFVF_XYZ|D3DFVF_NORMAL|D3DFVF_DIFFUSE)
-*/
-// Untransformed coloured textured vertex
-#define D3DFVF_UTVERTEX (D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1)
+// Untransformed coloured textured vertex: FVF_UTVERTEX in platform_sdl_gl.h
 
 /*    ===================== */
 /*    Structure definitions */
@@ -28,15 +23,14 @@ typedef enum { TRACK_MENU = 0, TRACK_PREVIEW, GAME_IN_PROGRESS, GAME_OVER } Game
 // Untransformed coloured vertex
 struct UTVERTEX
 {
-    D3DXVECTOR3 pos;    // The untransformed position for the vertex
-    D3DXVECTOR3 normal;    // The surface normal for the vertex
-    DWORD color;        // The vertex diffuse color value
+    glm::vec3 pos, normal;
+    DWORD color;
 };
 */
 #ifndef linux
 // Untransformed coloured textured vertex
 struct UTVERTEX {
-    D3DXVECTOR3 pos; // The untransformed position for the vertex
+    glm::vec3 pos; // The untransformed position for the vertex
     DWORD color;     // The vertex diffuse color value
     FLOAT tu, tv;    // The texture co-ordinates
 };

@@ -82,7 +82,9 @@ typedef int32_t INT;
 
 typedef BYTE* LPBYTE;
 
-#define D3DX_PI PI
+#ifndef PI
+#define PI 3.14159265358979323846
+#endif
 #define CALLBACK
 
 #define TRUE true
@@ -172,7 +174,7 @@ typedef DWORD COLOR; // bgra originaly, rgba for OpenGL
 
 #define RENDERVAL(val) ((float)val)
 
-#define D3DCOLOR_XRGB(r, g, b) RGBA_MAKE(r, g, b, 255)
+#define COLOR_RGB(r, g, b) RGBA_MAKE(r, g, b, 255)
 
 typedef struct tagPALETTEENTRY {
     BYTE peRed;
@@ -290,7 +292,7 @@ typedef struct VERT {
         z = nz;
     }
     VERT() { x = y = z = 0.0f; }
-} VERT, D3DXVECTOR3, *LPD3DXVECTOR3;
+} VERT;
 
 /*===================================================================
 3D Normal
@@ -366,20 +368,20 @@ static int NP2(int a) {
     return j;
 }
 
-// Textures
-class IDirect3DTexture9 {
+// Textures (OpenGL)
+class GpuTexture {
   protected:
     GLuint texID;
     int w, h;   // real size
     int w2, h2; // pow2 size
   public:
     float wf, hf; // ratio...
-    IDirect3DTexture9() {
+    GpuTexture() {
         texID = 0;
         w = h = w2 = h2 = 0;
         wf = hf = 1.0f;
     }
-    ~IDirect3DTexture9() {
+    ~GpuTexture() {
         if (texID)
             glDeleteTextures(1, &texID);
     }
@@ -387,8 +389,6 @@ class IDirect3DTexture9 {
     void Bind() { glBindTexture(GL_TEXTURE_2D, texID); }
     void UnBind() { glBindTexture(GL_TEXTURE_2D, 0); }
 };
-
-typedef struct IDirect3DTexture9 *LPDIRECT3DTEXTURE9, *PDIRECT3DTEXTURE9;
 /*============================================================
 
 
@@ -524,272 +524,256 @@ HRESULT DirectSoundCreate8(LPCGUID lpcGuidDevice, LPDIRECTSOUND8* ppDS8, LPUNKNO
 #define GetWindowHandle() 0
 
 /*=============================================================
- * 
- * Matrix functions
- * 
-===============================================================*/
+ * Matrix functions (GLM)
+ *=============================================================*/
 #ifdef USEGLM
-#define D3DXMATRIX glm::mat4
+typedef glm::mat4 mat4_t;
 #else
-typedef struct _D3DXMATRIX {
-    float m[16];
-} D3DXMATRIX;
+typedef struct { float m[16]; } mat4_t;
 #endif
 
-D3DXMATRIX* D3DXMatrixPerspectiveFovLH(D3DXMATRIX* pOut, FLOAT fovy, FLOAT Aspect, FLOAT zn, FLOAT zf);
-D3DXMATRIX* D3DXMatrixIdentity(D3DXMATRIX* pOut);
-D3DXMATRIX* D3DXMatrixRotationX(D3DXMATRIX* pOut, FLOAT Angle);
-D3DXMATRIX* D3DXMatrixRotationY(D3DXMATRIX* pOut, FLOAT Angle);
-D3DXMATRIX* D3DXMatrixRotationZ(D3DXMATRIX* pOut, FLOAT Angle);
-D3DXMATRIX* D3DXMatrixTranslation(D3DXMATRIX* pOut, FLOAT x, FLOAT y, FLOAT z);
-D3DXMATRIX* D3DXMatrixScaling(D3DXMATRIX* pOut, FLOAT sx, FLOAT sy, FLOAT sz);
+glm::mat4* mat4PerspectiveFov(glm::mat4* pOut, float fovy, float aspect, float zn, float zf);
+glm::mat4* mat4Identity(glm::mat4* pOut);
+glm::mat4* mat4RotationX(glm::mat4* pOut, float angle);
+glm::mat4* mat4RotationY(glm::mat4* pOut, float angle);
+glm::mat4* mat4RotationZ(glm::mat4* pOut, float angle);
+glm::mat4* mat4Translation(glm::mat4* pOut, float x, float y, float z);
+glm::mat4* mat4Scaling(glm::mat4* pOut, float sx, float sy, float sz);
+glm::mat4* mat4Multiply(glm::mat4* pOut, const glm::mat4* pM1, const glm::mat4* pM2);
+glm::mat4* mat4LookAt(glm::mat4* pOut, const glm::vec3* pEye, const glm::vec3* pAt, const glm::vec3* pUp);
 
-D3DXMATRIX* D3DXMatrixMultiply(D3DXMATRIX* pOut, const D3DXMATRIX* pM1, const D3DXMATRIX* pM2);
-D3DXMATRIX* D3DXMatrixLookAtLH(D3DXMATRIX* pOut, const D3DXVECTOR3* pEye, const D3DXVECTOR3* pAt,
-                               const D3DXVECTOR3* pUp);
 /*=============================================================
- * 
- * IDirect3DDevice9
- * 
-===============================================================*/
-typedef enum D3DTRANSFORMSTATETYPE {
-    D3DTS_VIEW = 2,
-    D3DTS_PROJECTION = 3,
-    D3DTS_WORLD = 4,
-    D3DTS_TEXTURE0 = 16,
-    D3DTS_TEXTURE1 = 17,
-    D3DTS_TEXTURE2 = 18,
-    D3DTS_TEXTURE3 = 19,
-    D3DTS_TEXTURE4 = 20,
-    D3DTS_TEXTURE5 = 21,
-    D3DTS_TEXTURE6 = 22,
-    D3DTS_TEXTURE7 = 23,
-    D3DTS_FORCE_DWORD = 0x7fffffff
-} D3DTRANSFORMSTATETYPE,
-    *LPD3DTRANSFORMSTATETYPE;
+ * Render device (OpenGL)
+ *=============================================================*/
+typedef enum TransformState {
+    TS_VIEW = 2,
+    TS_PROJECTION = 3,
+    TS_WORLD = 4,
+    TS_TEXTURE0 = 16,
+    TS_TEXTURE1 = 17,
+    TS_TEXTURE2 = 18,
+    TS_TEXTURE3 = 19,
+    TS_TEXTURE4 = 20,
+    TS_TEXTURE5 = 21,
+    TS_TEXTURE6 = 22,
+    TS_TEXTURE7 = 23,
+    TS_FORCE_DWORD = 0x7fffffff
+} TransformState;
 
-typedef enum D3DRENDERSTATETYPE {
-    D3DRS_ZENABLE = 7,
-    D3DRS_FILLMODE = 8,
-    D3DRS_SHADEMODE = 9,
-    D3DRS_ZWRITEENABLE = 14,
-    D3DRS_ALPHATESTENABLE = 15,
-    D3DRS_LASTPIXEL = 16,
-    D3DRS_SRCBLEND = 19,
-    D3DRS_DESTBLEND = 20,
-    D3DRS_CULLMODE = 22,
-    D3DRS_ZFUNC = 23,
-    D3DRS_ALPHAREF = 24,
-    D3DRS_ALPHAFUNC = 25,
-    D3DRS_DITHERENABLE = 26,
-    D3DRS_ALPHABLENDENABLE = 27,
-    D3DRS_FOGENABLE = 28,
-    D3DRS_SPECULARENABLE = 29,
-    D3DRS_FOGCOLOR = 34,
-    D3DRS_FOGTABLEMODE = 35,
-    D3DRS_FOGSTART = 36,
-    D3DRS_FOGEND = 37,
-    D3DRS_FOGDENSITY = 38,
-    D3DRS_RANGEFOGENABLE = 48,
-    D3DRS_STENCILENABLE = 52,
-    D3DRS_STENCILFAIL = 53,
-    D3DRS_STENCILZFAIL = 54,
-    D3DRS_STENCILPASS = 55,
-    D3DRS_STENCILFUNC = 56,
-    D3DRS_STENCILREF = 57,
-    D3DRS_STENCILMASK = 58,
-    D3DRS_STENCILWRITEMASK = 59,
-    D3DRS_TEXTUREFACTOR = 60,
-    D3DRS_WRAP0 = 128,
-    D3DRS_WRAP1 = 129,
-    D3DRS_WRAP2 = 130,
-    D3DRS_WRAP3 = 131,
-    D3DRS_WRAP4 = 132,
-    D3DRS_WRAP5 = 133,
-    D3DRS_WRAP6 = 134,
-    D3DRS_WRAP7 = 135,
-    D3DRS_CLIPPING = 136,
-    D3DRS_LIGHTING = 137,
-    D3DRS_AMBIENT = 139,
-    D3DRS_FOGVERTEXMODE = 140,
-    D3DRS_COLORVERTEX = 141,
-    D3DRS_LOCALVIEWER = 142,
-    D3DRS_NORMALIZENORMALS = 143,
-    D3DRS_DIFFUSEMATERIALSOURCE = 145,
-    D3DRS_SPECULARMATERIALSOURCE = 146,
-    D3DRS_AMBIENTMATERIALSOURCE = 147,
-    D3DRS_EMISSIVEMATERIALSOURCE = 148,
-    D3DRS_VERTEXBLEND = 151,
-    D3DRS_CLIPPLANEENABLE = 152,
-    D3DRS_POINTSIZE = 154,
-    D3DRS_POINTSIZE_MIN = 155,
-    D3DRS_POINTSPRITEENABLE = 156,
-    D3DRS_POINTSCALEENABLE = 157,
-    D3DRS_POINTSCALE_A = 158,
-    D3DRS_POINTSCALE_B = 159,
-    D3DRS_POINTSCALE_C = 160,
-    D3DRS_MULTISAMPLEANTIALIAS = 161,
-    D3DRS_MULTISAMPLEMASK = 162,
-    D3DRS_PATCHEDGESTYLE = 163,
-    D3DRS_DEBUGMONITORTOKEN = 165,
-    D3DRS_POINTSIZE_MAX = 166,
-    D3DRS_INDEXEDVERTEXBLENDENABLE = 167,
-    D3DRS_COLORWRITEENABLE = 168,
-    D3DRS_TWEENFACTOR = 170,
-    D3DRS_BLENDOP = 171,
-    D3DRS_POSITIONDEGREE = 172,
-    D3DRS_NORMALDEGREE = 173,
-    D3DRS_SCISSORTESTENABLE = 174,
-    D3DRS_SLOPESCALEDEPTHBIAS = 175,
-    D3DRS_ANTIALIASEDLINEENABLE = 176,
-    D3DRS_MINTESSELLATIONLEVEL = 178,
-    D3DRS_MAXTESSELLATIONLEVEL = 179,
-    D3DRS_ADAPTIVETESS_X = 180,
-    D3DRS_ADAPTIVETESS_Y = 181,
-    D3DRS_ADAPTIVETESS_Z = 182,
-    D3DRS_ADAPTIVETESS_W = 183,
-    D3DRS_ENABLEADAPTIVETESSELLATION = 184,
-    D3DRS_TWOSIDEDSTENCILMODE = 185,
-    D3DRS_CCW_STENCILFAIL = 186,
-    D3DRS_CCW_STENCILZFAIL = 187,
-    D3DRS_CCW_STENCILPASS = 188,
-    D3DRS_CCW_STENCILFUNC = 189,
-    D3DRS_COLORWRITEENABLE1 = 190,
-    D3DRS_COLORWRITEENABLE2 = 191,
-    D3DRS_COLORWRITEENABLE3 = 192,
-    D3DRS_BLENDFACTOR = 193,
-    D3DRS_SRGBWRITEENABLE = 194,
-    D3DRS_DEPTHBIAS = 195,
-    D3DRS_WRAP8 = 198,
-    D3DRS_WRAP9 = 199,
-    D3DRS_WRAP10 = 200,
-    D3DRS_WRAP11 = 201,
-    D3DRS_WRAP12 = 202,
-    D3DRS_WRAP13 = 203,
-    D3DRS_WRAP14 = 204,
-    D3DRS_WRAP15 = 205,
-    D3DRS_SEPARATEALPHABLENDENABLE = 206,
-    D3DRS_SRCBLENDALPHA = 207,
-    D3DRS_DESTBLENDALPHA = 208,
-    D3DRS_BLENDOPALPHA = 209,
-    D3DRS_FORCE_DWORD = 0x7fffffff
-} D3DRENDERSTATETYPE,
-    *LPD3DRENDERSTATETYPE;
+typedef enum RenderStateType {
+    RS_ZENABLE = 7,
+    RS_FILLMODE = 8,
+    RS_SHADEMODE = 9,
+    RS_ZWRITEENABLE = 14,
+    RS_ALPHATESTENABLE = 15,
+    RS_LASTPIXEL = 16,
+    RS_SRCBLEND = 19,
+    RS_DESTBLEND = 20,
+    RS_CULLMODE = 22,
+    RS_ZFUNC = 23,
+    RS_ALPHAREF = 24,
+    RS_ALPHAFUNC = 25,
+    RS_DITHERENABLE = 26,
+    RS_ALPHABLENDENABLE = 27,
+    RS_FOGENABLE = 28,
+    RS_SPECULARENABLE = 29,
+    RS_FOGCOLOR = 34,
+    RS_FOGTABLEMODE = 35,
+    RS_FOGSTART = 36,
+    RS_FOGEND = 37,
+    RS_FOGDENSITY = 38,
+    RS_RANGEFOGENABLE = 48,
+    RS_STENCILENABLE = 52,
+    RS_STENCILFAIL = 53,
+    RS_STENCILZFAIL = 54,
+    RS_STENCILPASS = 55,
+    RS_STENCILFUNC = 56,
+    RS_STENCILREF = 57,
+    RS_STENCILMASK = 58,
+    RS_STENCILWRITEMASK = 59,
+    RS_TEXTUREFACTOR = 60,
+    RS_WRAP0 = 128,
+    RS_WRAP1 = 129,
+    RS_WRAP2 = 130,
+    RS_WRAP3 = 131,
+    RS_WRAP4 = 132,
+    RS_WRAP5 = 133,
+    RS_WRAP6 = 134,
+    RS_WRAP7 = 135,
+    RS_CLIPPING = 136,
+    RS_LIGHTING = 137,
+    RS_AMBIENT = 139,
+    RS_FOGVERTEXMODE = 140,
+    RS_COLORVERTEX = 141,
+    RS_LOCALVIEWER = 142,
+    RS_NORMALIZENORMALS = 143,
+    RS_DIFFUSEMATERIALSOURCE = 145,
+    RS_SPECULARMATERIALSOURCE = 146,
+    RS_AMBIENTMATERIALSOURCE = 147,
+    RS_EMISSIVEMATERIALSOURCE = 148,
+    RS_VERTEXBLEND = 151,
+    RS_CLIPPLANEENABLE = 152,
+    RS_POINTSIZE = 154,
+    RS_POINTSIZE_MIN = 155,
+    RS_POINTSPRITEENABLE = 156,
+    RS_POINTSCALEENABLE = 157,
+    RS_POINTSCALE_A = 158,
+    RS_POINTSCALE_B = 159,
+    RS_POINTSCALE_C = 160,
+    RS_MULTISAMPLEANTIALIAS = 161,
+    RS_MULTISAMPLEMASK = 162,
+    RS_PATCHEDGESTYLE = 163,
+    RS_DEBUGMONITORTOKEN = 165,
+    RS_POINTSIZE_MAX = 166,
+    RS_INDEXEDVERTEXBLENDENABLE = 167,
+    RS_COLORWRITEENABLE = 168,
+    RS_TWEENFACTOR = 170,
+    RS_BLENDOP = 171,
+    RS_POSITIONDEGREE = 172,
+    RS_NORMALDEGREE = 173,
+    RS_SCISSORTESTENABLE = 174,
+    RS_SLOPESCALEDEPTHBIAS = 175,
+    RS_ANTIALIASEDLINEENABLE = 176,
+    RS_MINTESSELLATIONLEVEL = 178,
+    RS_MAXTESSELLATIONLEVEL = 179,
+    RS_ADAPTIVETESS_X = 180,
+    RS_ADAPTIVETESS_Y = 181,
+    RS_ADAPTIVETESS_Z = 182,
+    RS_ADAPTIVETESS_W = 183,
+    RS_ENABLEADAPTIVETESSELLATION = 184,
+    RS_TWOSIDEDSTENCILMODE = 185,
+    RS_CCW_STENCILFAIL = 186,
+    RS_CCW_STENCILZFAIL = 187,
+    RS_CCW_STENCILPASS = 188,
+    RS_CCW_STENCILFUNC = 189,
+    RS_COLORWRITEENABLE1 = 190,
+    RS_COLORWRITEENABLE2 = 191,
+    RS_COLORWRITEENABLE3 = 192,
+    RS_BLENDFACTOR = 193,
+    RS_SRGBWRITEENABLE = 194,
+    RS_DEPTHBIAS = 195,
+    RS_WRAP8 = 198,
+    RS_WRAP9 = 199,
+    RS_WRAP10 = 200,
+    RS_WRAP11 = 201,
+    RS_WRAP12 = 202,
+    RS_WRAP13 = 203,
+    RS_WRAP14 = 204,
+    RS_WRAP15 = 205,
+    RS_SEPARATEALPHABLENDENABLE = 206,
+    RS_SRCBLENDALPHA = 207,
+    RS_DESTBLENDALPHA = 208,
+    RS_BLENDOPALPHA = 209,
+    RS_FORCE_DWORD = 0x7fffffff
+} RenderStateType;
 
-typedef enum D3DCULL {
-    D3DCULL_NONE = 1,
-    D3DCULL_CW = 2,
-    D3DCULL_CCW = 3,
-    D3DCULL_FORCE_DWORD = 0x7fffffff
-} D3DCULL,
-    *LPD3DCULL;
+typedef enum CullMode {
+    CULL_NONE = 1,
+    CULL_CW = 2,
+    CULL_CCW = 3,
+    CULL_FORCE_DWORD = 0x7fffffff
+} CullMode;
 
-typedef enum D3DPRIMITIVETYPE {
-    D3DPT_POINTLIST = 1,
-    D3DPT_LINELIST = 2,
-    D3DPT_LINESTRIP = 3,
-    D3DPT_TRIANGLELIST = 4,
-    D3DPT_TRIANGLESTRIP = 5,
-    D3DPT_TRIANGLEFAN = 6,
-    D3DPT_FORCE_DWORD = 0x7fffffff
-} D3DPRIMITIVETYPE,
-    *LPD3DPRIMITIVETYPE;
+typedef enum PrimitiveType {
+    PT_POINTLIST = 1,
+    PT_LINELIST = 2,
+    PT_LINESTRIP = 3,
+    PT_TRIANGLELIST = 4,
+    PT_TRIANGLESTRIP = 5,
+    PT_TRIANGLEFAN = 6,
+    PT_FORCE_DWORD = 0x7fffffff
+} PrimitiveType;
 
-typedef enum D3DTEXTURESTAGESTATETYPE {
-    D3DTSS_COLOROP = 1,
-    D3DTSS_COLORARG1 = 2,
-    D3DTSS_COLORARG2 = 3,
-    D3DTSS_ALPHAOP = 4,
-    D3DTSS_ALPHAARG1 = 5,
-    D3DTSS_ALPHAARG2 = 6,
-    D3DTSS_BUMPENVMAT00 = 7,
-    D3DTSS_BUMPENVMAT01 = 8,
-    D3DTSS_BUMPENVMAT10 = 9,
-    D3DTSS_BUMPENVMAT11 = 10,
-    D3DTSS_TEXCOORDINDEX = 11,
-    D3DTSS_BUMPENVLSCALE = 22,
-    D3DTSS_BUMPENVLOFFSET = 23,
-    D3DTSS_TEXTURETRANSFORMFLAGS = 24,
-    D3DTSS_COLORARG0 = 26,
-    D3DTSS_ALPHAARG0 = 27,
-    D3DTSS_RESULTARG = 28,
-    D3DTSS_CONSTANT = 32,
-    D3DTSS_FORCE_DWORD = 0x7fffffff
-} D3DTEXTURESTAGESTATETYPE,
-    *LPD3DTEXTURESTAGESTATETYPE;
+typedef enum TextureStageStateType {
+    TSS_COLOROP = 1,
+    TSS_COLORARG1 = 2,
+    TSS_COLORARG2 = 3,
+    TSS_ALPHAOP = 4,
+    TSS_ALPHAARG1 = 5,
+    TSS_ALPHAARG2 = 6,
+    TSS_BUMPENVMAT00 = 7,
+    TSS_BUMPENVMAT01 = 8,
+    TSS_BUMPENVMAT10 = 9,
+    TSS_BUMPENVMAT11 = 10,
+    TSS_TEXCOORDINDEX = 11,
+    TSS_BUMPENVLSCALE = 22,
+    TSS_BUMPENVLOFFSET = 23,
+    TSS_TEXTURETRANSFORMFLAGS = 24,
+    TSS_COLORARG0 = 26,
+    TSS_ALPHAARG0 = 27,
+    TSS_RESULTARG = 28,
+    TSS_CONSTANT = 32,
+    TSS_FORCE_DWORD = 0x7fffffff
+} TextureStageStateType;
 
-typedef enum D3DSAMPLERSTATETYPE {
-    D3DSAMP_ADDRESSU = 13,
-    D3DSAMP_ADDRESSV = 14,
-    D3DSAMP_ADDRESSW = 15,
-    D3DSAMP_FORCE_DWORD = 0x7fffffff
-} D3DSAMPLERSTATETYPE,
-    *LPD3DSAMPLERSTATETYPE;
+typedef enum SamplerStateType {
+    SAMP_ADDRESSU = 13,
+    SAMP_ADDRESSV = 14,
+    SAMP_ADDRESSW = 15,
+    SAMP_FORCE_DWORD = 0x7fffffff
+} SamplerStateType;
 
-typedef enum D3DTEXTUREADDRESS {
-    D3DTADDRESS_WRAP = 1,
-    D3DTADDRESS_MIRROR = 2,
-    D3DTADDRESS_CLAMP = 3,
-    D3DTADDRESS_BORDER = 4,
-    D3DTADDRESS_MIRRORONCE = 5,
-    D3DTADDRESS_FORCE_DWORD = 0x7fffffff
-} D3DTEXTUREADDRESS,
-    *LPD3DTEXTUREADDRESS;
+typedef enum TextureAddress {
+    TADDRESS_WRAP = 1,
+    TADDRESS_MIRROR = 2,
+    TADDRESS_CLAMP = 3,
+    TADDRESS_BORDER = 4,
+    TADDRESS_MIRRORONCE = 5,
+    TADDRESS_FORCE_DWORD = 0x7fffffff
+} TextureAddress;
 
-typedef enum D3DTEXTUREOP {
-    D3DTOP_DISABLE = 1,
-    D3DTOP_SELECTARG1 = 2,
-    D3DTOP_SELECTARG2 = 3,
-    D3DTOP_MODULATE = 4,
-    D3DTOP_MODULATE2X = 5,
-    D3DTOP_MODULATE4X = 6,
-    D3DTOP_ADD = 7,
-    D3DTOP_ADDSIGNED = 8,
-    D3DTOP_ADDSIGNED2X = 9,
-    D3DTOP_SUBTRACT = 10,
-    D3DTOP_ADDSMOOTH = 11,
-    D3DTOP_BLENDDIFFUSEALPHA = 12,
-    D3DTOP_BLENDTEXTUREALPHA = 13,
-    D3DTOP_BLENDFACTORALPHA = 14,
-    D3DTOP_BLENDTEXTUREALPHAPM = 15,
-    D3DTOP_BLENDCURRENTALPHA = 16,
-    D3DTOP_PREMODULATE = 17,
-    D3DTOP_MODULATEALPHA_ADDCOLOR = 18,
-    D3DTOP_MODULATECOLOR_ADDALPHA = 19,
-    D3DTOP_MODULATEINVALPHA_ADDCOLOR = 20,
-    D3DTOP_MODULATEINVCOLOR_ADDALPHA = 21,
-    D3DTOP_BUMPENVMAP = 22,
-    D3DTOP_BUMPENVMAPLUMINANCE = 23,
-    D3DTOP_DOTPRODUCT3 = 24,
-    D3DTOP_MULTIPLYADD = 25,
-    D3DTOP_LERP = 26,
-    D3DTOP_FORCE_DWORD = 0x7fffffff
-} D3DTEXTUREOP,
-    *LPD3DTEXTUREOP;
+typedef enum TextureOp {
+    TOP_DISABLE = 1,
+    TOP_SELECTARG1 = 2,
+    TOP_SELECTARG2 = 3,
+    TOP_MODULATE = 4,
+    TOP_MODULATE2X = 5,
+    TOP_MODULATE4X = 6,
+    TOP_ADD = 7,
+    TOP_ADDSIGNED = 8,
+    TOP_ADDSIGNED2X = 9,
+    TOP_SUBTRACT = 10,
+    TOP_ADDSMOOTH = 11,
+    TOP_BLENDDIFFUSEALPHA = 12,
+    TOP_BLENDTEXTUREALPHA = 13,
+    TOP_BLENDFACTORALPHA = 14,
+    TOP_BLENDTEXTUREALPHAPM = 15,
+    TOP_BLENDCURRENTALPHA = 16,
+    TOP_PREMODULATE = 17,
+    TOP_MODULATEALPHA_ADDCOLOR = 18,
+    TOP_MODULATECOLOR_ADDALPHA = 19,
+    TOP_MODULATEINVALPHA_ADDCOLOR = 20,
+    TOP_MODULATEINVCOLOR_ADDALPHA = 21,
+    TOP_BUMPENVMAP = 22,
+    TOP_BUMPENVMAPLUMINANCE = 23,
+    TOP_DOTPRODUCT3 = 24,
+    TOP_MULTIPLYADD = 25,
+    TOP_LERP = 26,
+    TOP_FORCE_DWORD = 0x7fffffff
+} TextureOp;
 
-typedef enum D3DBLEND {
-    D3DBLEND_ZERO = 1,
-    D3DBLEND_ONE = 2,
-    D3DBLEND_SRCCOLOR = 3,
-    D3DBLEND_INVSRCCOLOR = 4,
-    D3DBLEND_SRCALPHA = 5,
-    D3DBLEND_INVSRCALPHA = 6,
-    D3DBLEND_DESTALPHA = 7,
-    D3DBLEND_INVDESTALPHA = 8,
-    D3DBLEND_DESTCOLOR = 9,
-    D3DBLEND_INVDESTCOLOR = 10,
-    D3DBLEND_SRCALPHASAT = 11,
-    D3DBLEND_BOTHSRCALPHA = 12,
-    D3DBLEND_BOTHINVSRCALPHA = 13,
-    D3DBLEND_BLENDFACTOR = 14,
-    D3DBLEND_INVBLENDFACTOR = 15,
-    D3DBLEND_SRCCOLOR2 = 16,
-    D3DBLEND_INVSRCCOLOR2 = 17,
-    D3DBLEND_FORCE_DWORD = 0x7fffffff
-} D3DBLEND,
-    *LPD3DBLEND;
+typedef enum BlendMode {
+    BLEND_ZERO = 1,
+    BLEND_ONE = 2,
+    BLEND_SRCCOLOR = 3,
+    BLEND_INVSRCCOLOR = 4,
+    BLEND_SRCALPHA = 5,
+    BLEND_INVSRCALPHA = 6,
+    BLEND_DESTALPHA = 7,
+    BLEND_INVDESTALPHA = 8,
+    BLEND_DESTCOLOR = 9,
+    BLEND_INVDESTCOLOR = 10,
+    BLEND_SRCALPHASAT = 11,
+    BLEND_BOTHSRCALPHA = 12,
+    BLEND_BOTHINVSRCALPHA = 13,
+    BLEND_BLENDFACTOR = 14,
+    BLEND_INVBLENDFACTOR = 15,
+    BLEND_SRCCOLOR2 = 16,
+    BLEND_INVSRCCOLOR2 = 17,
+    BLEND_FORCE_DWORD = 0x7fffffff
+} BlendMode;
 
-typedef struct D3DSURFACE_DESC {
+typedef struct SurfaceDesc {
     //  D3DFORMAT           Format;
     //  D3DRESOURCETYPE     Type;
     //  DWORD               Usage;
@@ -798,54 +782,44 @@ typedef struct D3DSURFACE_DESC {
     //  DWORD               MultiSampleQuality;
     UINT Width;
     UINT Height;
-} D3DSURFACE_DESC, *LPD3DSURFACE_DESC;
+} SurfaceDesc;
 
-typedef struct D3DXCOLOR {
-    FLOAT r;
-    FLOAT g;
-    FLOAT b;
-    FLOAT a;
-    D3DXCOLOR(float a_r, float a_g, float a_b, float a_a) : r(a_r), g(a_g), b(a_b), a(a_a) {};
-} D3DXCOLOR, *LPD3DXCOLOR;
-
-typedef DWORD D3DCOLOR;
-
-typedef struct D3DRECT {
+typedef struct ClearRect {
     LONG x1;
     LONG y1;
     LONG x2;
     LONG y2;
-} D3DRECT;
+} ClearRect;
 
-#define D3DTA_TEXTURE 1
-#define D3DTA_CURRENT 2
-#define D3DTA_DIFFUSE 3
+#define TA_TEXTURE 1
+#define TA_CURRENT 2
+#define TA_DIFFUSE 3
 
-#define D3DCLEAR_STENCIL 1
-#define D3DCLEAR_TARGET 2
-#define D3DCLEAR_ZBUFFER 4
+#define CLEAR_STENCIL 1
+#define CLEAR_TARGET 2
+#define CLEAR_ZBUFFER 4
 
-#define D3DUSAGE_WRITEONLY 1
+#define VB_USAGE_WRITEONLY 1
 
-#define D3DFVF_DIFFUSE (1)
-#define D3DFVF_NORMAL (1 << 1)
-#define D3DFVF_XYZ (1 << 2)
-#define D3DFVF_XYZRHW (1 << 3)
-#define D3DFVF_XYZW (1 << 4)
-#define D3DFVF_TEX0 (1 << 5)
-#define D3DFVF_TEX1 (1 << 6)
+#define FVF_DIFFUSE (1)
+#define FVF_NORMAL (1 << 1)
+#define FVF_XYZ (1 << 2)
+#define FVF_XYZRHW (1 << 3)
+#define FVF_XYZW (1 << 4)
+#define FVF_TEX0 (1 << 5)
+#define FVF_TEX1 (1 << 6)
+#define FVF_UTVERTEX (FVF_XYZ | FVF_DIFFUSE | FVF_TEX1)
 
-typedef enum D3DPOOL {
-    D3DPOOL_DEFAULT = 0,
-    D3DPOOL_MANAGED = 1,
-    D3DPOOL_SYSTEMMEM = 2,
-    D3DPOOL_SCRATCH = 3,
-    D3DPOOL_FORCE_DWORD = 0x7fffffff
-} D3DPOOL,
-    *LPD3DPOOL;
+typedef enum PoolType {
+    POOL_DEFAULT = 0,
+    POOL_MANAGED = 1,
+    POOL_SYSTEMMEM = 2,
+    POOL_SCRATCH = 3,
+    POOL_FORCE_DWORD = 0x7fffffff
+} PoolType;
 
 struct UTVERTEX {
-    D3DXVECTOR3 pos; // The untransformed position for the vertex
+    glm::vec3 pos; // position for the vertex
     DWORD color;     // The vertex diffuse color value
     FLOAT tu, tv;    // The texture co-ordinates
 };
@@ -858,10 +832,10 @@ struct UTBuffer {
 
 typedef void* HANDLE;
 
-class IDirect3DVertexBuffer9 {
+class VertexBuffer {
   public:
-    IDirect3DVertexBuffer9(uint32_t capacity, uint32_t fvf);
-    ~IDirect3DVertexBuffer9();
+    VertexBuffer(uint32_t capacity, uint32_t fvf);
+    ~VertexBuffer();
     HRESULT Release();
     HRESULT Lock(UINT OffsetToLock, UINT SizeToLock, void** ppbData, DWORD Flags);
     HRESULT Unlock();
@@ -869,26 +843,25 @@ class IDirect3DVertexBuffer9 {
     UTBuffer buffer;
 };
 
-class IDirect3DDevice9 {
+class RenderDevice {
   public:
-    IDirect3DDevice9();
-    ~IDirect3DDevice9();
-    HRESULT SetTransform(D3DTRANSFORMSTATETYPE State, D3DXMATRIX* pMatrix);
-    HRESULT GetTransform(D3DTRANSFORMSTATETYPE State, D3DXMATRIX* pMatrix);
-    HRESULT SetRenderState(D3DRENDERSTATETYPE State, int Value);
-    HRESULT DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount);
-    HRESULT SetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD Value);
-    HRESULT SetSamplerState(DWORD Sampler, D3DSAMPLERSTATETYPE Type, DWORD Value);
-    HRESULT SetTexture(DWORD Sampler, IDirect3DTexture9* pTexture);
-    HRESULT Clear(DWORD Count, const D3DRECT* pRects, DWORD Flags, D3DCOLOR Color, float Z, DWORD Stencil);
+    RenderDevice();
+    ~RenderDevice();
+    HRESULT SetTransform(TransformState State, glm::mat4* pMatrix);
+    HRESULT GetTransform(TransformState State, glm::mat4* pMatrix);
+    HRESULT SetRenderState(RenderStateType State, int Value);
+    HRESULT DrawPrimitive(PrimitiveType PrimitiveType, UINT StartVertex, UINT PrimitiveCount);
+    HRESULT SetTextureStageState(DWORD Stage, TextureStageStateType Type, DWORD Value);
+    HRESULT SetSamplerState(DWORD Sampler, SamplerStateType Type, DWORD Value);
+    HRESULT SetTexture(DWORD Sampler, GpuTexture* pTexture);
+    HRESULT Clear(DWORD Count, const ClearRect* pRects, DWORD Flags, COLOR Color, float Z, DWORD Stencil);
     HRESULT BeginScene() { return S_OK; };
     HRESULT EndScene() { return S_OK; };
-    HRESULT CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool,
-                               IDirect3DVertexBuffer9** ppVertexBuffer, HANDLE* pSharedHandle);
-    HRESULT SetStreamSource(UINT StreamNumber, IDirect3DVertexBuffer9* pStreamData, UINT OffsetInBytes, UINT Stride);
+    HRESULT CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, PoolType Pool,
+                               VertexBuffer** ppVertexBuffer, HANDLE* pSharedHandle);
+    HRESULT SetStreamSource(UINT StreamNumber, VertexBuffer* pStreamData, UINT OffsetInBytes, UINT Stride);
     HRESULT SetFVF(DWORD FVF);
 
-    // not DX9 function, but easier here
     void ActivateWorldMatrix();
     void DeactivateWorldMatrix();
 
@@ -897,8 +870,8 @@ class IDirect3DDevice9 {
     UINT alphaop[8];
     UINT colorarg1[8];
     UINT colorarg2[8];
-    D3DXMATRIX mWorld, mView, mProj, mText, mInv;
-    IDirect3DVertexBuffer9* buffer[8];
+    glm::mat4 mWorld, mView, mProj, mText, mInv;
+    VertexBuffer* buffer[8];
     uint32_t offset[8];
     uint32_t stride[8];
     DWORD fvf;
@@ -913,7 +886,7 @@ class TextHelper {
     void DrawFormattedTextLine(const wchar_t* line, ...);
     void Begin() {};
     void End() {};
-    void SetForegroundColor(D3DXCOLOR clr);
+    void SetForegroundColor(glm::vec4 clr);
 
   private:
     GLuint m_sprite;
@@ -927,9 +900,9 @@ class TextHelper {
     int m_sizew, m_sizeh;
 };
 
-IDirect3DDevice9* GetRenderDevice();
+RenderDevice* GetRenderDevice();
 
-const D3DSURFACE_DESC* GetBackBufferSurfaceDesc();
+const SurfaceDesc* GetBackBufferSurfaceDesc();
 
 DOUBLE GetTimeSeconds();
 
