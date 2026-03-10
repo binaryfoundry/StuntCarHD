@@ -49,6 +49,9 @@
 /* Perspective depth range: keep near/far ratio modest to avoid depth-buffer precision loss and z-fighting */
 #define PERSPECTIVE_NEAR (5.0f)
 #define PERSPECTIVE_FAR  (131072.0f)
+/* Overlapping split ranges for depth partitioning (far pass first, then near pass). */
+#define PERSPECTIVE_NEAR_PASS_FAR (8000.0f)
+#define PERSPECTIVE_FAR_PASS_NEAR (2000.0f)
 /* Cap physics steps per frame to avoid catch-up stutter and spiral of death when the game can't keep up. */
 static const int MAX_PHYSICS_STEPS_PER_FRAME = 10;
 /* Body-dynamics integration rate from PHYSICS_UPDATE_HZ (PhysicsConfig.h). */
@@ -1436,6 +1439,47 @@ void RenderText(double fTime) {
 // Render the scene
 //--------------------------------------------------------------------------------------
 
+static void SetPerspectiveDepthRange(RenderDevice* pDevice, FLOAT nearPlane, FLOAT farPlane) {
+    GLint vp[4];
+    glGetIntegerv(GL_VIEWPORT, vp);
+    const FLOAT fAspect = (vp[3] > 0) ? (static_cast<FLOAT>(vp[2]) / static_cast<FLOAT>(vp[3])) : (4.0f / 3.0f);
+
+    glm::mat4 matProj;
+    mat4PerspectiveFov(&matProj, PI / 4, fAspect, nearPlane, farPlane);
+    pDevice->SetTransform(TS_PROJECTION, &matProj);
+}
+
+static void RenderWorldGeometry(RenderDevice* pDevice) {
+    // Draw Track
+    pDevice->SetTransform(TS_WORLD, &matWorldTrack);
+    DrawGroundPlane(pDevice);
+    DrawTrack(pDevice);
+
+    switch (GameMode) {
+    case TRACK_MENU:
+        break;
+
+    case TRACK_PREVIEW:
+        // Draw Opponent's Car
+        pDevice->SetTransform(TS_WORLD, &matWorldOpponentsCar);
+        DrawCar(pDevice);
+        break;
+
+    case GAME_IN_PROGRESS:
+    case GAME_OVER:
+        // Draw Opponent's Car
+        pDevice->SetTransform(TS_WORLD, &matWorldOpponentsCar);
+        DrawCar(pDevice);
+
+        if (bOutsideView) {
+            // Draw Player1's Car
+            pDevice->SetTransform(TS_WORLD, &matWorldCar);
+            DrawCar(pDevice);
+        }
+        break;
+    }
+}
+
 void CALLBACK OnFrameRender(RenderDevice* pDevice, double fTime, float fElapsedTime, void* pUserContext) {
     HRESULT hr;
 
@@ -1455,38 +1499,20 @@ void CALLBACK OnFrameRender(RenderDevice* pDevice, double fTime, float fElapsedT
         DrawBackdrop(render_backdrop_viewpoint_y, render_backdrop_viewpoint_x_angle, render_backdrop_viewpoint_y_angle,
                      render_backdrop_viewpoint_z_angle);
 
-        //        SetupLights(pDevice);
+        // Render world geometry with split depth ranges for improved precision.
+        SetPerspectiveDepthRange(pDevice, PERSPECTIVE_FAR_PASS_NEAR, PERSPECTIVE_FAR);
+        RenderWorldGeometry(pDevice);
 
-        // Draw Track
-        pDevice->SetTransform(TS_WORLD, &matWorldTrack);
-        DrawGroundPlane(pDevice);
-        DrawTrack(pDevice);
+        // Clear depth and redraw near range so close geometry wins cleanly.
+        V(pDevice->Clear(0, NULL, CLEAR_ZBUFFER, 0, 1.0f, 0));
+        SetPerspectiveDepthRange(pDevice, PERSPECTIVE_NEAR, PERSPECTIVE_NEAR_PASS_FAR);
+        RenderWorldGeometry(pDevice);
 
-        switch (GameMode) {
-        case TRACK_MENU:
-            break;
-
-        case TRACK_PREVIEW:
-            // Draw Opponent's Car
-            pDevice->SetTransform(TS_WORLD, &matWorldOpponentsCar);
-            DrawCar(pDevice);
-            break;
-
-        case GAME_IN_PROGRESS:
-        case GAME_OVER:
-            // Draw Opponent's Car
-            pDevice->SetTransform(TS_WORLD, &matWorldOpponentsCar);
-            DrawCar(pDevice);
-
-            if (bOutsideView) {
-                // Draw Player1's Car
-                pDevice->SetTransform(TS_WORLD, &matWorldCar);
-                DrawCar(pDevice);
-            } else {
+        if ((GameMode == GAME_IN_PROGRESS) || (GameMode == GAME_OVER)) {
+            if (!bOutsideView) {
                 // draw cockpit...
                 DrawCockpit(pDevice);
             }
-            break;
         }
 
         if (GameMode == GAME_IN_PROGRESS) {
@@ -1928,10 +1954,7 @@ static void ApplyWindowLayout(int windowWidth, int windowHeight, bool logLayout)
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    glm::mat4 matProj;
-    FLOAT fAspect = projWidth / virtualHeight;
-    mat4PerspectiveFov(&matProj, PI / 4, fAspect, PERSPECTIVE_NEAR, PERSPECTIVE_FAR);
-    pDevice.SetTransform(TS_PROJECTION, &matProj);
+    SetPerspectiveDepthRange(&pDevice, PERSPECTIVE_NEAR, PERSPECTIVE_FAR);
 
     if (logLayout) {
         printf("Display mode: %s, Scale: %.2f, Viewport: %dx%d @ (%d,%d)\n", wideScreen ? "Widescreen" : "Standard",
