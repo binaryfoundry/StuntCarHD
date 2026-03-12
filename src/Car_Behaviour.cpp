@@ -628,21 +628,11 @@ static long RoundToLong(double value) {
 }
 
 static void ProjectCarRenderPositionToRoadNormal(long* x, long* y, long* z) {
-    long maxDifference = front_left_road_height - front_left_actual_height;
-    long difference = front_right_road_height - front_right_actual_height;
-    if (difference > maxDifference)
-        maxDifference = difference;
-    difference = rear_road_height - rear_actual_height;
-    if (difference > maxDifference)
-        maxDifference = difference;
-
-    if (maxDifference <= 0)
+    if ((front_left_road_height == OFF_ROAD_HEIGHT) || (front_right_road_height == OFF_ROAD_HEIGHT) ||
+        (rear_road_height == OFF_ROAD_HEIGHT))
         return;
 
-    // Convert wheel-road penetration (height units) to render Y units used by StuntCarRacer.cpp.
-    const long liftY = ((maxDifference + 1) << 8) * LOCAL_Y_FACTOR;
-
-    // Build contact points in the same render coordinate units as x/y/z.
+    // Build a road plane from the three wheel contact points in render coordinate units.
     const double flx = static_cast<double>(player_x + front_left_wheel_x_offset);
     const double fly = -static_cast<double>(front_left_road_height) * static_cast<double>(1 << 8) *
                        static_cast<double>(LOCAL_Y_FACTOR);
@@ -678,17 +668,22 @@ static void ProjectCarRenderPositionToRoadNormal(long* x, long* y, long* z) {
         nz = -nz;
     }
 
-    if (ny >= -1e-6) {
-        // Degenerate/near-vertical normal: fallback to vertical projection.
-        *y -= liftY;
+    const double nLenSq = (nx * nx) + (ny * ny) + (nz * nz);
+    if (nLenSq <= 1e-9)
         return;
-    }
 
-    // Move along the surface normal so the y component exactly removes penetration.
-    const double distanceAlongNormal = static_cast<double>(liftY) / (-ny);
-    *x += RoundToLong(nx * distanceAlongNormal);
-    *y += RoundToLong(ny * distanceAlongNormal);
-    *z += RoundToLong(nz * distanceAlongNormal);
+    // Project the render anchor point to the road plane only when it is below that plane.
+    const double px = static_cast<double>(*x);
+    const double py = static_cast<double>(*y);
+    const double pz = static_cast<double>(*z);
+    const double signedNumerator = ((px - flx) * nx) + ((py - fly) * ny) + ((pz - flz) * nz);
+    if (signedNumerator >= 0.0)
+        return;
+
+    const double scale = -signedNumerator / nLenSq;
+    *x += RoundToLong(nx * scale);
+    *y += RoundToLong(ny * scale);
+    *z += RoundToLong(nz * scale);
 }
 
 /*
