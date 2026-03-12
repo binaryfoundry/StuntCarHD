@@ -1732,9 +1732,9 @@ void CALLBACK OnFrameRender(RenderDevice* pDevice, double fTime, float fElapsedT
             if (alpha > 1.0f)
                 alpha = 1.0f;
 
-            const long p1x = static_cast<long>(LerpLong(prev_player1_render_x, player1_render_x, alpha));
-            const long p1y = static_cast<long>(LerpLong(prev_player1_render_y, player1_render_y, alpha));
-            const long p1z = static_cast<long>(LerpLong(prev_player1_render_z, player1_render_z, alpha));
+            const long p1x = static_cast<long>(LerpLong(prev_player1_x, player1_x, alpha));
+            const long p1y = static_cast<long>(LerpLong(prev_player1_y, player1_y, alpha));
+            const long p1z = static_cast<long>(LerpLong(prev_player1_z, player1_z, alpha));
             const long p1xa = (static_cast<long>(LerpWrappedAngleUnits(prev_player1_x_angle, player1_x_angle, alpha)) &
                                (MAX_ANGLE - 1));
             const long p1ya = (static_cast<long>(LerpWrappedAngleUnits(prev_player1_y_angle, player1_y_angle, alpha)) &
@@ -1742,9 +1742,9 @@ void CALLBACK OnFrameRender(RenderDevice* pDevice, double fTime, float fElapsedT
             const long p1za = (static_cast<long>(LerpWrappedAngleUnits(prev_player1_z_angle, player1_z_angle, alpha)) &
                                (MAX_ANGLE - 1));
 
-            const long p2x = static_cast<long>(LerpLong(prev_opponent_render_x, opponent_render_x, alpha));
-            const long p2y = static_cast<long>(LerpLong(prev_opponent_render_y, opponent_render_y, alpha));
-            const long p2z = static_cast<long>(LerpLong(prev_opponent_render_z, opponent_render_z, alpha));
+            const long p2x = static_cast<long>(LerpLong(prev_opponent_x, opponent_x, alpha));
+            const long p2y = static_cast<long>(LerpLong(prev_opponent_y, opponent_y, alpha));
+            const long p2z = static_cast<long>(LerpLong(prev_opponent_z, opponent_z, alpha));
             const long p2xa = RadiansToPlayerAngle(LerpWrappedRadians(prev_opponent_x_angle, opponent_x_angle, alpha));
             const long p2ya = RadiansToPlayerAngle(LerpWrappedRadians(prev_opponent_y_angle, opponent_y_angle, alpha));
             const long p2za = RadiansToPlayerAngle(LerpWrappedRadians(prev_opponent_z_angle, opponent_z_angle, alpha));
