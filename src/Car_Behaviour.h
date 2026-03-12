@@ -45,6 +45,7 @@ extern void CarBehaviourForInstance(long instanceIndex, DWORD input, long* x, lo
                                     long* y_angle, long* z_angle, float stepSeconds);
 extern long PushCarBehaviourInstance(long instanceIndex);
 extern void PopCarBehaviourInstance(long previousInstance);
+extern void SetCarRoadStateForInstance(long instanceIndex, long piece, long distanceIntoSection);
 
 extern void CarBehaviour(DWORD input, long* x, long* y, long* z, long* x_angle, long* y_angle, long* z_angle,
                         float stepSeconds);

@@ -3619,6 +3619,32 @@ void PopCarBehaviourInstance(long previousInstance) {
     }
 }
 
+void SetCarRoadStateForInstance(long instanceIndex, long piece, long distanceIntoSection) {
+    if (piece < 0 || piece >= NumTrackPieces)
+        return;
+
+    const long numSegments = Track[piece].numSegments;
+    if (numSegments <= 0)
+        return;
+
+    long clampedDistance = distanceIntoSection;
+    if (clampedDistance < 0)
+        clampedDistance = 0;
+    const long maxDistance = (numSegments * 256) - 1;
+    if (clampedDistance > maxDistance)
+        clampedDistance = maxDistance;
+
+    long segment = clampedDistance >> 8;
+    if (segment >= numSegments)
+        segment = numSegments - 1;
+
+    const long previousInstance = PushCarBehaviourInstance(instanceIndex);
+    player_current_piece = piece;
+    player_current_segment = segment;
+    players_distance_into_section = clampedDistance;
+    PopCarBehaviourInstance(previousInstance);
+}
+
 void CarBehaviourForInstance(long instanceIndex, DWORD input, long* x, long* y, long* z, long* x_angle,
                              long* y_angle, long* z_angle, float stepSeconds) {
     const long previousInstance = PushCarBehaviourInstance(instanceIndex);

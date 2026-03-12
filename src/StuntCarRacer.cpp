@@ -1682,6 +1682,8 @@ static void RenderGameplayViewport(RenderDevice* pDevice, int viewportX, int vie
                                    long viewpoint_x, long viewpoint_y, long viewpoint_z, long viewpoint_x_angle,
                                    long viewpoint_y_angle, long viewpoint_z_angle, bool drawPlayer1Car,
                                    bool drawPlayer2Car, bool drawCockpitOverlay, long cockpitStateInstanceIndex) {
+    const long previousInstance = PushCarBehaviourInstance(cockpitStateInstanceIndex);
+
     glViewport(viewportX, viewportY, viewportW, viewportH);
     V(pDevice->Clear(0, NULL, CLEAR_ZBUFFER, 0, 1.0f, 0));
 
@@ -1695,11 +1697,10 @@ static void RenderGameplayViewport(RenderDevice* pDevice, int viewportX, int vie
     SetPerspectiveDepthRange(pDevice, PERSPECTIVE_NEAR, PERSPECTIVE_NEAR_PASS_FAR);
     RenderWorldGeometry(pDevice, drawPlayer1Car, drawPlayer2Car);
 
-    if (drawCockpitOverlay) {
-        const long previousInstance = PushCarBehaviourInstance(cockpitStateInstanceIndex);
+    if (drawCockpitOverlay)
         DrawCockpit(pDevice);
-        PopCarBehaviourInstance(previousInstance);
-    }
+
+    PopCarBehaviourInstance(previousInstance);
 }
 
 void CALLBACK OnFrameRender(RenderDevice* pDevice, double fTime, float fElapsedTime, void* pUserContext) {
@@ -2443,6 +2444,11 @@ static bool RunFrame(double frameTime, bool allowQuit) {
                         OpponentBehaviour(&opponent_x, &opponent_y, &opponent_z, &opponent_x_angle,
                                           &opponent_y_angle, &opponent_z_angle, bOpponentPaused,
                                           (float)g_physicsStepSeconds);
+                        if (bFauxMultiplayerMode) {
+                            long opponentPiece = 0, opponentDistanceIntoSection = 0;
+                            GetOpponentRoadState(&opponentPiece, &opponentDistanceIntoSection);
+                            SetCarRoadStateForInstance(1, opponentPiece, opponentDistanceIntoSection);
+                        }
                     }
                     UpdateProjectedRenderPositions();
                 }

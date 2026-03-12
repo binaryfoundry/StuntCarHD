@@ -22,6 +22,7 @@ extern void CarToCarCollision(void);
 extern long CalculateIfWinning(long start_finish_piece);
 
 extern long CalculateOpponentsDistance(void);
+extern void GetOpponentRoadState(long* piece, long* distanceIntoSection);
 
 extern void CapturePreviousOpponentShadow(void);
 

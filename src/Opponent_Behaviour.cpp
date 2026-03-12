@@ -2280,3 +2280,10 @@ long CalculateOpponentsDistance(void) {
 
     return (dist);
 }
+
+void GetOpponentRoadState(long* piece, long* distanceIntoSection) {
+    if (piece)
+        *piece = opponents_current_piece;
+    if (distanceIntoSection)
+        *distanceIntoSection = opponents_distance_into_section;
+}
