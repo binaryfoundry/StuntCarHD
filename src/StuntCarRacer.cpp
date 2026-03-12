@@ -1541,7 +1541,7 @@ static void SetGameplayViewTransform(RenderDevice* pDevice, long viewpoint_x, lo
 static void RenderGameplayViewport(RenderDevice* pDevice, int viewportX, int viewportY, int viewportW, int viewportH,
                                    long viewpoint_x, long viewpoint_y, long viewpoint_z, long viewpoint_x_angle,
                                    long viewpoint_y_angle, long viewpoint_z_angle, bool drawPlayer1Car,
-                                   bool drawPlayer2Car, bool drawCockpitOverlay) {
+                                   bool drawPlayer2Car, bool drawCockpitOverlay, long cockpitStateInstanceIndex) {
     glViewport(viewportX, viewportY, viewportW, viewportH);
     V(pDevice->Clear(0, NULL, CLEAR_ZBUFFER, 0, 1.0f, 0));
 
@@ -1555,8 +1555,11 @@ static void RenderGameplayViewport(RenderDevice* pDevice, int viewportX, int vie
     SetPerspectiveDepthRange(pDevice, PERSPECTIVE_NEAR, PERSPECTIVE_NEAR_PASS_FAR);
     RenderWorldGeometry(pDevice, drawPlayer1Car, drawPlayer2Car);
 
-    if (drawCockpitOverlay)
+    if (drawCockpitOverlay) {
+        const long previousInstance = PushCarBehaviourInstance(cockpitStateInstanceIndex);
         DrawCockpit(pDevice);
+        PopCarBehaviourInstance(previousInstance);
+    }
 }
 
 void CALLBACK OnFrameRender(RenderDevice* pDevice, double fTime, float fElapsedTime, void* pUserContext) {
@@ -1616,12 +1619,12 @@ void CALLBACK OnFrameRender(RenderDevice* pDevice, double fTime, float fElapsedT
             // Player 1 (top): always draw player 2; draw player 1 only when outside view.
             RenderGameplayViewport(pDevice, fullVp[0], fullVp[1] + lowerHeight, fullVp[2], upperHeight, topViewX,
                                    topViewY, topViewZ, topViewXa, topViewYa, topViewZa, bOutsideView, true,
-                                   !bOutsideView);
+                                   !bOutsideView, 0);
 
             // Player 2 (bottom): always draw player 1; draw player 2 only when outside view.
             RenderGameplayViewport(pDevice, fullVp[0], fullVp[1], fullVp[2], lowerHeight, bottomViewX, bottomViewY,
                                    bottomViewZ, bottomViewXa, bottomViewYa, bottomViewZa, true,
-                                   bOutsideView, !bOutsideView);
+                                   bOutsideView, !bOutsideView, 1);
 
             // Restore full viewport for text rendering and subsequent frames.
             glViewport(fullVp[0], fullVp[1], fullVp[2], fullVp[3]);

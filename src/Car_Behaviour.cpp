@@ -3528,8 +3528,7 @@ static void LoadCarBehaviourInstance(long instanceIndex) {
     g_activeCarBehaviourInstance = normalisedIndex;
 }
 
-void CarBehaviourForInstance(long instanceIndex, DWORD input, long* x, long* y, long* z, long* x_angle,
-                             long* y_angle, long* z_angle, float stepSeconds) {
+long PushCarBehaviourInstance(long instanceIndex) {
     const long targetInstance = NormaliseCarBehaviourInstance(instanceIndex);
     EnsureCarBehaviourInstanceExists(targetInstance);
 
@@ -3538,31 +3537,33 @@ void CarBehaviourForInstance(long instanceIndex, DWORD input, long* x, long* y, 
     if (previousInstance != targetInstance) {
         LoadCarBehaviourInstance(targetInstance);
     }
+    return previousInstance;
+}
 
-    CarBehaviourActiveInstance(input, x, y, z, x_angle, y_angle, z_angle, stepSeconds);
-
+void PopCarBehaviourInstance(long previousInstance) {
+    const long restoreInstance = NormaliseCarBehaviourInstance(previousInstance);
+    EnsureCarBehaviourInstanceExists(restoreInstance);
     SaveActiveCarBehaviourInstance();
-    if (previousInstance != targetInstance) {
-        LoadCarBehaviourInstance(previousInstance);
+    if (g_activeCarBehaviourInstance != restoreInstance) {
+        LoadCarBehaviourInstance(restoreInstance);
     }
 }
 
-void LimitViewpointYForInstance(long instanceIndex, long* y) {
-    const long targetInstance = NormaliseCarBehaviourInstance(instanceIndex);
-    EnsureCarBehaviourInstanceExists(targetInstance);
+void CarBehaviourForInstance(long instanceIndex, DWORD input, long* x, long* y, long* z, long* x_angle,
+                             long* y_angle, long* z_angle, float stepSeconds) {
+    const long previousInstance = PushCarBehaviourInstance(instanceIndex);
 
-    const long previousInstance = g_activeCarBehaviourInstance;
-    SaveActiveCarBehaviourInstance();
-    if (previousInstance != targetInstance) {
-        LoadCarBehaviourInstance(targetInstance);
-    }
+    CarBehaviourActiveInstance(input, x, y, z, x_angle, y_angle, z_angle, stepSeconds);
+
+    PopCarBehaviourInstance(previousInstance);
+}
+
+void LimitViewpointYForInstance(long instanceIndex, long* y) {
+    const long previousInstance = PushCarBehaviourInstance(instanceIndex);
 
     LimitViewpointY(y);
 
-    SaveActiveCarBehaviourInstance();
-    if (previousInstance != targetInstance) {
-        LoadCarBehaviourInstance(previousInstance);
-    }
+    PopCarBehaviourInstance(previousInstance);
 }
 
 void CarBehaviour(DWORD input, long* x, long* y, long* z, long* x_angle, long* y_angle, long* z_angle,
