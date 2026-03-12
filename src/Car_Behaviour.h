@@ -48,6 +48,7 @@ extern void CarBehaviour(DWORD input, long* x, long* y, long* z, long* x_angle, 
                         float stepSeconds);
 
 extern void LimitViewpointY(long* y);
+extern void LimitViewpointYForInstance(long instanceIndex, long* y);
 
 extern long AmigaVolumeToMixerGain(long amiga_volume);
 

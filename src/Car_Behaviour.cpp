@@ -3547,6 +3547,24 @@ void CarBehaviourForInstance(long instanceIndex, DWORD input, long* x, long* y, 
     }
 }
 
+void LimitViewpointYForInstance(long instanceIndex, long* y) {
+    const long targetInstance = NormaliseCarBehaviourInstance(instanceIndex);
+    EnsureCarBehaviourInstanceExists(targetInstance);
+
+    const long previousInstance = g_activeCarBehaviourInstance;
+    SaveActiveCarBehaviourInstance();
+    if (previousInstance != targetInstance) {
+        LoadCarBehaviourInstance(targetInstance);
+    }
+
+    LimitViewpointY(y);
+
+    SaveActiveCarBehaviourInstance();
+    if (previousInstance != targetInstance) {
+        LoadCarBehaviourInstance(previousInstance);
+    }
+}
+
 void CarBehaviour(DWORD input, long* x, long* y, long* z, long* x_angle, long* y_angle, long* z_angle,
                   float stepSeconds) {
     CarBehaviourForInstance(0, input, x, y, z, x_angle, y_angle, z_angle, stepSeconds);

@@ -882,8 +882,9 @@ static void UpdateInterpolatedCarTransforms(RenderDevice* pDevice, float alpha) 
     const float opponentXa = LerpWrappedRadians(prev_opponent_x_angle, opponent_x_angle, alpha);
     const float opponentYa = LerpWrappedRadians(prev_opponent_y_angle, opponent_y_angle, alpha);
     const float opponentZa = LerpWrappedRadians(prev_opponent_z_angle, opponent_z_angle, alpha);
+    const float opponentCarYOffset = bMultiplayerMode ? (VCAR_HEIGHT / 3.0f) : (VCAR_HEIGHT / 4.0f);
     BuildCarWorldTransform(&matWorldOpponentsCar, opponentX, opponentY, opponentZ, opponentXa, opponentYa, opponentZa,
-                           VCAR_HEIGHT / 4.0f);
+                           opponentCarYOffset);
 
     glm::mat4 matRot, matTemp, matTrans, matView;
     static glm::vec3 vUpVec(0.0f, 1.0f, 0.0f);
@@ -956,9 +957,10 @@ static void SetCarWorldTransform(void) {
 }
 
 static void SetOpponentsCarWorldTransform(void) {
+    const float opponentCarYOffset = bMultiplayerMode ? (VCAR_HEIGHT / 3.0f) : (VCAR_HEIGHT / 4.0f);
     BuildCarWorldTransform(&matWorldOpponentsCar, FixedPointToWorldCoord(opponent_x), FixedPointToWorldCoord(opponent_y),
                            FixedPointToWorldCoord(opponent_z), opponent_x_angle, opponent_y_angle, opponent_z_angle,
-                           VCAR_HEIGHT / 4.0f);
+                           opponentCarYOffset);
 }
 
 static void RestartEngineAudioBuffers(bool resetEngineModel) {
@@ -2286,6 +2288,8 @@ static bool RunFrame(double frameTime, bool allowQuit) {
                 if (GameMode == GAME_IN_PROGRESS) {
                     // Snap the car back above the road surface before computing the camera.
                     LimitViewpointY(&player1_y);
+                    if (bMultiplayerMode)
+                        LimitViewpointYForInstance(1, &opponent_y);
                     if (!bPaused) {
                         CalcGameViewpoint();
                         viewpoint1_x >>= LOG_PRECISION;
