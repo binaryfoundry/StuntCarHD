@@ -898,6 +898,9 @@ static void CapturePreviousCarState(void) {
     prev_target_y = target_y;
     prev_target_z = target_z;
     CapturePreviousOpponentShadow();
+    CapturePreviousPlayerShadowForInstance(0);
+    if (bMultiplayerMode)
+        CapturePreviousPlayerShadowForInstance(1);
 
     have_prev_car_state = true;
 }
@@ -2530,6 +2533,11 @@ static bool RunFrame(double frameTime, bool allowQuit) {
                             SetCarRoadStateForInstance(1, opponentPiece, opponentDistanceIntoSection);
                         }
                     }
+                    if (GameMode == GAME_IN_PROGRESS) {
+                        UpdatePlayerShadowForInstance(0);
+                        if (bMultiplayerMode)
+                            UpdatePlayerShadowForInstance(1);
+                    }
                     UpdateProjectedRenderPositions();
                 }
                 if (GameMode == GAME_IN_PROGRESS) {
@@ -2589,8 +2597,16 @@ static bool RunFrame(double frameTime, bool allowQuit) {
         // correctly interpolates between the last two integration states.
         const float alpha = static_cast<float>(g_logicAccumulator / g_physicsStepSeconds);
         UpdateInterpolatedCarTransforms(&pDevice, alpha);
-        if (!bMultiplayerMode && ((GameMode == TRACK_PREVIEW) || (GameMode == GAME_IN_PROGRESS)))
-            UpdateInterpolatedOpponentShadow(alpha);
+        RemoveShadowTriangles();
+        if ((GameMode == TRACK_PREVIEW) || (GameMode == GAME_IN_PROGRESS)) {
+            if (!bMultiplayerMode)
+                UpdateInterpolatedOpponentShadow(alpha);
+            if (GameMode == GAME_IN_PROGRESS) {
+                UpdateInterpolatedPlayerShadowForInstance(0, alpha);
+                if (bMultiplayerMode)
+                    UpdateInterpolatedPlayerShadowForInstance(1, alpha);
+            }
+        }
     }
 
     RenderCurrentFrame(frameTime, static_cast<float>(frameDelta));

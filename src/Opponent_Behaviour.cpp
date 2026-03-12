@@ -47,6 +47,8 @@ extern bool bTestKey;
 
 #define NUM_OPPONENTS (11)
 #define NUM_X_SPANS (32)
+#define NUM_PLAYER_SHADOW_INSTANCES (2)
+#define PLAYER_SHADOW_BASE_X_SPAN (27)
 
 #define LOCAL_Y_FACTOR 4
 
@@ -190,6 +192,22 @@ static bool opp_shadow_visible = false;
 static bool prev_opp_shadow_visible = false;
 static bool have_prev_opp_shadow = false;
 
+typedef struct {
+    COORD_3D rear_left;
+    COORD_3D rear_right;
+    COORD_3D front_left;
+    COORD_3D front_right;
+    COORD_3D prev_rear_left;
+    COORD_3D prev_rear_right;
+    COORD_3D prev_front_left;
+    COORD_3D prev_front_right;
+    bool visible;
+    bool prev_visible;
+    bool have_prev;
+} CarShadowState;
+
+static CarShadowState player_shadow_state[NUM_PLAYER_SHADOW_INSTANCES];
+
 // wheel heights
 static long opp_actual_height[NUM_OPP_WHEEL_POSITIONS];
 
@@ -247,10 +265,15 @@ static void OpponentPlayerInteraction(void);
 static void MoveOpponentToOneSide(void);
 static void OpponentPushPlayer(void);
 
-#ifdef OPPONENT_SHADOW
-extern void RemoveShadowTriangles(void);
-extern void StoreShadowTriangle(glm::vec3 v1, glm::vec3 v2, glm::vec3 v3, long other_colour);
-#endif
+static long ClampPlayerShadowInstance(long instanceIndex);
+static bool BuildShadowQuadFromRoadState(long piece, long distance_into_section, long road_x_position, long base_x_span,
+                                         COORD_3D* rear_left_out, COORD_3D* rear_right_out,
+                                         COORD_3D* front_left_out, COORD_3D* front_right_out,
+                                         bool* shadow_visible_out);
+static void AppendInterpolatedShadowTriangles(const COORD_3D& prev_rear_left, const COORD_3D& prev_rear_right,
+                                              const COORD_3D& prev_front_left, const COORD_3D& prev_front_right,
+                                              const COORD_3D& rear_left, const COORD_3D& rear_right,
+                                              const COORD_3D& front_left, const COORD_3D& front_right, float alpha);
 
 /*    ======================================================================================= */
 /*    Function:        ResetOpponent                                                            */
@@ -278,6 +301,9 @@ static void ResetOpponent(void) {
     opp_shadow_visible = false;
     prev_opp_shadow_visible = false;
     have_prev_opp_shadow = false;
+    for (long i = 0; i < NUM_PLAYER_SHADOW_INSTANCES; ++i) {
+        player_shadow_state[i] = {};
+    }
     return;
 }
 
@@ -355,6 +381,232 @@ extern bool bMultiplayerMode;
 #define NEW_OPP_METHOD
 // current surface co-ords
 static long sx1, sy1, sz1, sx2, sy2, sz2, sx3, sy3, sz3, sx4, sy4, sz4;
+
+static long ClampPlayerShadowInstance(long instanceIndex) {
+    if (instanceIndex < 0)
+        return 0;
+    if (instanceIndex >= NUM_PLAYER_SHADOW_INSTANCES)
+        return NUM_PLAYER_SHADOW_INSTANCES - 1;
+    return instanceIndex;
+}
+
+static bool BuildShadowQuadFromRoadState(long piece, long distance_into_section, long road_x_position, long base_x_span,
+                                         COORD_3D* rear_left_out, COORD_3D* rear_right_out,
+                                         COORD_3D* front_left_out, COORD_3D* front_right_out,
+                                         bool* shadow_visible_out) {
+    if (!rear_left_out || !rear_right_out || !front_left_out || !front_right_out || !shadow_visible_out)
+        return false;
+    if (NumTrackPieces <= 0)
+        return false;
+    if ((piece < 0) || (piece >= NumTrackPieces))
+        return false;
+
+    bool draw_shadow = TRUE;
+    long distance = distance_into_section - 64;
+    if (distance < 0) {
+        piece--;
+        if (piece < 0)
+            piece = (NumTrackPieces - 1);
+        distance += (Track[piece].numSegments * 256);
+    }
+
+    long segment = distance >> 8;
+    if ((segment < 0) || (segment >= Track[piece].numSegments))
+        return false;
+
+    GetSurfaceCoords(piece, segment);
+    if (Track[piece].roadColour[segment] == SCR_BASE_COLOUR + 0)
+        draw_shadow = FALSE;
+
+    long next_segment = FALSE;
+    long surface_position = CalcSurfacePosition(&next_segment, distance, 0);
+    long left_side_x, left_side_z;
+    if (!next_segment) {
+        left_side_x = sx2 + ((surface_position * (sx1 - sx2)) >> 8);
+        left_side_z = sz2 + ((surface_position * (sz1 - sz2)) >> 8);
+    } else {
+        left_side_x = sx1 + ((surface_position * (sx1 - sx2)) >> 8);
+        left_side_z = sz1 + ((surface_position * (sz1 - sz2)) >> 8);
+    }
+
+    surface_position = CalcSurfacePosition(&next_segment, distance, 0);
+    long right_side_x, right_side_z;
+    if (!next_segment) {
+        right_side_x = sx3 + ((surface_position * (sx4 - sx3)) >> 8);
+        right_side_z = sz3 + ((surface_position * (sz4 - sz3)) >> 8);
+    } else {
+        right_side_x = sx4 + ((surface_position * (sx4 - sx3)) >> 8);
+        right_side_z = sz4 + ((surface_position * (sz4 - sz3)) >> 8);
+    }
+
+    long xd = right_side_x - left_side_x;
+    long yd = (sy3 - sy2) / LOCAL_Y_FACTOR;
+    long zd = right_side_z - left_side_z;
+    long base_width = static_cast<long>(sqrt(static_cast<double>((xd * xd) + (zd * zd))));
+    long slope_width = static_cast<long>(sqrt(static_cast<double>((base_width * base_width) + (yd * yd))));
+    long shadow_x_span = base_x_span;
+    if (slope_width > 0)
+        shadow_x_span = (base_x_span * base_width) / slope_width;
+    if (shadow_x_span < 1)
+        shadow_x_span = 1;
+
+    long sx, sz;
+    sz = distance & 0xff;
+
+    sx = road_x_position - shadow_x_span;
+    CalculateOpponentsRoadWheelHeight(sx, sz, &rear_left_out->y);
+    rear_left_out->x = left_side_x + ((sx * xd) >> 8);
+    rear_left_out->z = left_side_z + ((sx * zd) >> 8);
+
+    sx = road_x_position + shadow_x_span;
+    CalculateOpponentsRoadWheelHeight(sx, sz, &rear_right_out->y);
+    rear_right_out->x = left_side_x + ((sx * xd) >> 8);
+    rear_right_out->z = left_side_z + ((sx * zd) >> 8);
+
+    long piece_x = Track[piece].x << (LOG_CUBE_SIZE - LOG_PRECISION);
+    long piece_z = Track[piece].z << (LOG_CUBE_SIZE - LOG_PRECISION);
+    rear_left_out->x += piece_x;
+    rear_right_out->x += piece_x;
+    rear_left_out->z += piece_z;
+    rear_right_out->z += piece_z;
+
+    long diff = rear_right_out->x - rear_left_out->x;
+    long xdiff = diff + (diff >> 1);
+    diff = rear_right_out->z - rear_left_out->z;
+    long zdiff = diff + (diff >> 1);
+    front_left_out->x = rear_left_out->x - zdiff;
+    front_left_out->z = rear_left_out->z + xdiff;
+    front_right_out->x = rear_right_out->x - zdiff;
+    front_right_out->z = rear_right_out->z + xdiff;
+
+    distance += 128;
+    if (distance >= (Track[piece].numSegments * 256)) {
+        distance -= (Track[piece].numSegments * 256);
+        piece++;
+        if (piece > (NumTrackPieces - 1))
+            piece = 0;
+    }
+
+    segment = distance >> 8;
+    if ((segment < 0) || (segment >= Track[piece].numSegments))
+        return false;
+
+    GetSurfaceCoords(piece, segment);
+    if (Track[piece].roadColour[segment] == SCR_BASE_COLOUR + 0)
+        draw_shadow = FALSE;
+
+    sz = distance & 0xff;
+    sx = road_x_position - shadow_x_span;
+    CalculateOpponentsRoadWheelHeight(sx, sz, &front_left_out->y);
+
+    sx = road_x_position + shadow_x_span;
+    CalculateOpponentsRoadWheelHeight(sx, sz, &front_right_out->y);
+
+    *shadow_visible_out = (draw_shadow != FALSE);
+    return true;
+}
+
+static void AppendInterpolatedShadowTriangles(const COORD_3D& prev_rear_left, const COORD_3D& prev_rear_right,
+                                              const COORD_3D& prev_front_left, const COORD_3D& prev_front_right,
+                                              const COORD_3D& rear_left, const COORD_3D& rear_right,
+                                              const COORD_3D& front_left, const COORD_3D& front_right, float alpha) {
+    auto LerpShadowCoord = [alpha](long from, long to) -> float {
+        return static_cast<float>(from) + (static_cast<float>(to) - static_cast<float>(from)) * alpha;
+    };
+
+    glm::vec3 v2(LerpShadowCoord(prev_rear_left.x, rear_left.x), 7.0f + LerpShadowCoord(prev_rear_left.y, rear_left.y) / 2.0f,
+                   LerpShadowCoord(prev_rear_left.z, rear_left.z));
+    glm::vec3 v3(LerpShadowCoord(prev_rear_right.x, rear_right.x), 7.0f + LerpShadowCoord(prev_rear_right.y, rear_right.y) / 2.0f,
+                   LerpShadowCoord(prev_rear_right.z, rear_right.z));
+    glm::vec3 v1(LerpShadowCoord(prev_front_left.x, front_left.x), 7.0f + LerpShadowCoord(prev_front_left.y, front_left.y) / 2.0f,
+                   LerpShadowCoord(prev_front_left.z, front_left.z));
+    glm::vec3 v4(LerpShadowCoord(prev_front_right.x, front_right.x),
+                   7.0f + LerpShadowCoord(prev_front_right.y, front_right.y) / 2.0f,
+                   LerpShadowCoord(prev_front_right.z, front_right.z));
+
+    StoreShadowTriangle(v2, v1, v3, 0);
+    StoreShadowTriangle(v1, v4, v3, 0);
+}
+
+void CapturePreviousPlayerShadowForInstance(long instanceIndex) {
+#ifdef OPPONENT_SHADOW
+    const long idx = ClampPlayerShadowInstance(instanceIndex);
+    CarShadowState& shadow = player_shadow_state[idx];
+
+    shadow.prev_rear_left = shadow.rear_left;
+    shadow.prev_rear_right = shadow.rear_right;
+    shadow.prev_front_left = shadow.front_left;
+    shadow.prev_front_right = shadow.front_right;
+    shadow.prev_visible = shadow.visible;
+    shadow.have_prev = true;
+#else
+    (void)instanceIndex;
+#endif
+}
+
+void UpdatePlayerShadowForInstance(long instanceIndex) {
+#ifdef OPPONENT_SHADOW
+    const long idx = ClampPlayerShadowInstance(instanceIndex);
+    CarShadowState& shadow = player_shadow_state[idx];
+
+    CarRoadCollisionState roadState{};
+    if (!GetCarRoadCollisionStateForInstance(idx, &roadState) || !roadState.dropStartDone) {
+        shadow.visible = false;
+        shadow.have_prev = false;
+        return;
+    }
+
+    bool shadowVisible = false;
+    if (!BuildShadowQuadFromRoadState(roadState.piece, roadState.distanceIntoSection,
+                                      roadState.rearWheelSurfaceXPosition,
+                                      PLAYER_SHADOW_BASE_X_SPAN, &shadow.rear_left, &shadow.rear_right,
+                                      &shadow.front_left, &shadow.front_right, &shadowVisible)) {
+        shadow.visible = false;
+        shadow.have_prev = false;
+        return;
+    }
+
+    shadow.visible = shadowVisible;
+    if (!shadow.have_prev) {
+        shadow.prev_rear_left = shadow.rear_left;
+        shadow.prev_rear_right = shadow.rear_right;
+        shadow.prev_front_left = shadow.front_left;
+        shadow.prev_front_right = shadow.front_right;
+        shadow.prev_visible = shadow.visible;
+        shadow.have_prev = true;
+    }
+#else
+    (void)instanceIndex;
+#endif
+}
+
+void UpdateInterpolatedPlayerShadowForInstance(long instanceIndex, float alpha) {
+#ifdef OPPONENT_SHADOW
+    const long idx = ClampPlayerShadowInstance(instanceIndex);
+    CarShadowState& shadow = player_shadow_state[idx];
+
+    if (!shadow.visible)
+        return;
+
+    if (!shadow.have_prev)
+        CapturePreviousPlayerShadowForInstance(idx);
+
+    if (!shadow.prev_visible)
+        alpha = 1.0f;
+
+    if (alpha < 0.0f)
+        alpha = 0.0f;
+    if (alpha > 1.0f)
+        alpha = 1.0f;
+
+    AppendInterpolatedShadowTriangles(shadow.prev_rear_left, shadow.prev_rear_right, shadow.prev_front_left,
+                                      shadow.prev_front_right, shadow.rear_left, shadow.rear_right, shadow.front_left,
+                                      shadow.front_right, alpha);
+#else
+    (void)instanceIndex;
+    (void)alpha;
+#endif
+}
 
 void OpponentBehaviour(long* x, long* y, long* z, float* x_angle, float* y_angle, float* z_angle,
                        bool bOpponentPaused, float stepSeconds) {

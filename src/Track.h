@@ -104,6 +104,9 @@ extern HRESULT CreateShadowVertexBuffer(RenderDevice* pDevice);
 
 extern void FreeShadowVertexBuffer(void);
 
+extern void RemoveShadowTriangles(void);
+extern void StoreShadowTriangle(glm::vec3 v1, glm::vec3 v2, glm::vec3 v3, long other_colour);
+
 extern void MoveDrawBridge(void);
 
 extern void ResetDrawBridge(void);

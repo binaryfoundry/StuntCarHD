@@ -31,4 +31,8 @@ extern void CapturePreviousOpponentShadow(void);
 
 extern void UpdateInterpolatedOpponentShadow(float alpha);
 
+extern void CapturePreviousPlayerShadowForInstance(long instanceIndex);
+extern void UpdatePlayerShadowForInstance(long instanceIndex);
+extern void UpdateInterpolatedPlayerShadowForInstance(long instanceIndex, float alpha);
+
 #endif /* _OPPONENT_BEHAVIOUR */

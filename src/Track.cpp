@@ -1733,7 +1733,7 @@ void DrawTrack(RenderDevice* pDevice) {
         }
     }
 
-    /* Finally draw the opponent's car shadow */
+    /* Finally draw all car shadows accumulated for this frame */
     if ((GameMode != TRACK_MENU) && (numShadowVertices > 0)) {
         pDevice->SetStreamSource(0, pShadowVB, 0, sizeof(UTVERTEX));
         pDevice->SetFVF(FVF_UTVERTEX);
