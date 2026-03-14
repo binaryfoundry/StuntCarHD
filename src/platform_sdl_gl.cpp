@@ -1209,6 +1209,8 @@ TextHelper::TextHelper(TTF_Font* font, GLuint sprite, int size)
     glBindTexture(GL_TEXTURE_2D, m_texture);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     int w = npot(16 * m_fontsize);
     void* tmp = malloc(w * w * 4);
@@ -1225,7 +1227,8 @@ TextHelper::TextHelper(TTF_Font* font, GLuint sprite, int size)
             SDL_Surface* surf = TTF_RenderText_Blended(font, text, forecol);
             if (surf) {
                 m_as[i * 16 + j] = surf->w;
-                int subh = (surf->h >= m_fontsize) ? m_fontsize - 1 : surf->h;
+                // Keep the full font cell height so descenders (e.g. 'g') are not clipped.
+                int subh = (surf->h > m_fontsize) ? m_fontsize : surf->h;
 #ifdef __EMSCRIPTEN__
                 // WebGL 1 does not support GL_UNPACK_ROW_LENGTH; use tight buffer when pitch differs.
                 int rowBytes = surf->w * surf->format->BytesPerPixel;
@@ -1345,10 +1348,19 @@ void TextHelper::DrawTextLine(const wchar_t* line) {
         const float w = m_as[ch] * m_displayScale;
         const float h = m_fontsize * m_displayScale;
 
-        const float u0 = (col * m_fontsize + 0.0f) * m_inv;
-        const float u1 = (col * m_fontsize + (float)m_as[ch]) * m_inv;
-        const float v0 = (lin * m_fontsize + 0.0f) * m_inv;
-        const float v1 = (lin * m_fontsize + (float)(m_fontsize - 1)) * m_inv;
+        // Sample inside texel centers to avoid bleeding from adjacent glyph cells.
+        const float texelInset = 0.5f;
+        const float uMinPx = col * m_fontsize + texelInset;
+        float uMaxPx = col * m_fontsize + (float)m_as[ch] - texelInset;
+        if (uMaxPx < uMinPx)
+            uMaxPx = uMinPx;
+        const float vMinPx = lin * m_fontsize + texelInset;
+        const float vMaxPx = lin * m_fontsize + (float)m_fontsize - texelInset;
+
+        const float u0 = uMinPx * m_inv;
+        const float u1 = uMaxPx * m_inv;
+        const float v0 = vMinPx * m_inv;
+        const float v1 = vMaxPx * m_inv;
 
         pVertices[out++] = {posx, posy, 0.5f, 1.0f, color, u0, v0};
         pVertices[out++] = {posx + w, posy, 0.5f, 1.0f, color, u1, v0};
