@@ -3307,6 +3307,9 @@ int main(int argc, const char** argv) {
 #ifdef _WIN32
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "0");
 #endif
+#ifdef __EMSCRIPTEN__
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#document");
+#endif
 #ifdef USE_SDL2
     SDL_GLContext context = NULL;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) == -1) {
@@ -3340,6 +3343,10 @@ int main(int argc, const char** argv) {
     float customScale = 0.0f;
 
     for (int i = 1; i < argc; i++) {
+#ifdef __EMSCRIPTEN__
+        if (argv[i][0] != '-')
+            continue;
+#endif
         if (!strcmp(argv[i], "-f"))
             fullscreen = 1;
         else if (!strcmp(argv[i], "--fullscreen"))

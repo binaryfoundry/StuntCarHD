@@ -259,7 +259,7 @@
       })();
     </script>
     <div class="emscripten">
-      <canvas id="canvas" class="game" oncontextmenu="event.preventDefault()"></canvas>
+      <canvas id="canvas" class="game" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
       <div class="loading">Loading...</div>
     </div>
     <video id="webrtcRemoteVideo" autoplay playsinline style="display:none;pointer-events:none;"></video>
@@ -312,7 +312,61 @@
       </a>
     </div>
     <script type="text/javascript">
+        (function() {
+            if (!screen || !screen.orientation || typeof screen.orientation.lock !== 'function') return;
+            var orientationLock = screen.orientation.lock.bind(screen.orientation);
+            screen.orientation.lock = function() {
+                try {
+                    var result = orientationLock.apply(null, arguments);
+                    if (result && typeof result.catch === 'function') {
+                        return result.catch(function() {});
+                    }
+                    return result;
+                } catch (e) {
+                    return Promise.resolve();
+                }
+            };
+        })();
+
+        function sanitizeWebArguments(args) {
+            var allowedFlags = {
+                '-f': 1,
+                '--fullscreen': 1,
+                '-d': 1,
+                '--desktop': 1,
+                '-n': 1,
+                '--nomsaa': 1,
+                '-w': 1,
+                '--width': 1,
+                '-h': 1,
+                '--height': 1,
+                '-s': 1,
+                '--scale': 1
+            };
+            var valueFlags = { '-w': 1, '--width': 1, '-h': 1, '--height': 1, '-s': 1, '--scale': 1 };
+            var clean = [];
+            args = args || [];
+            for (var i = 0; i < args.length; i++) {
+                var arg = String(args[i] || '');
+                if (!allowedFlags[arg]) continue;
+                clean.push(arg);
+                if (valueFlags[arg] && i + 1 < args.length) clean.push(String(args[++i]));
+            }
+            return clean;
+        }
+
         const $game = document.querySelector('.game');
+        function focusGameCanvas() {
+            const canvas = document.getElementById('canvas');
+            if (!canvas || window.WEBRTC_JOIN_MODE) return;
+            var active = document.activeElement;
+            if (active && /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/i.test(active.tagName || '')) return;
+            try {
+                canvas.focus({ preventScroll: true });
+            } catch (e) {
+                try { canvas.focus(); } catch (ignored) {}
+            }
+        }
         function resize() {
             if (window.WEBRTC_JOIN_MODE) return;
             const canvas = document.getElementById('canvas');
@@ -332,25 +386,46 @@
                 console.error(Array.prototype.slice.call(arguments).join(' '));
             },
             canvas: document.getElementById('canvas') || $game,
-            noStdioInit: true
+            noStdioInit: true,
+            arguments: sanitizeWebArguments([])
         };
         if (window.WEBRTC_JOIN_MODE) Module.noInitialRun = true;
-        // Strip WebRTC query params from argv so the game does not see host=1, room=, join= as CLI args
+        // Keep itch.io and WebRTC query params out of argv; the native parser only accepts game flags.
         (Module.preRun = Module.preRun || []).push(function() {
-            if (Module['arguments']) {
-                var webRtcKeys = { host: 1, room: 1, join: 1 };
-                Module['arguments'] = Module['arguments'].filter(function(a) {
-                    var key = (String(a).split('=')[0] || '').toLowerCase();
-                    return !webRtcKeys[key];
-                });
-            }
+            Module['arguments'] = sanitizeWebArguments(Module['arguments']);
         });
         window.addEventListener('resize', resize, false);
         window.triggerResize = resize;
+        ['pointerdown', 'mousedown', 'touchstart'].forEach(function(type) {
+            document.addEventListener(type, function() { setTimeout(focusGameCanvas, 0); }, true);
+        });
+        ['focus', 'pageshow', 'fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(function(type) {
+            window.addEventListener(type, function() {
+                setTimeout(focusGameCanvas, 0);
+                setTimeout(focusGameCanvas, 250);
+            }, true);
+            document.addEventListener(type, function() {
+                setTimeout(focusGameCanvas, 0);
+                setTimeout(focusGameCanvas, 250);
+            }, true);
+        });
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) return;
+            setTimeout(focusGameCanvas, 0);
+            setTimeout(focusGameCanvas, 250);
+        }, true);
+        document.addEventListener('keydown', function(e) {
+            if (window.WEBRTC_JOIN_MODE) return;
+            if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','Spacebar'].includes(e.key) || e.code === 'Space') {
+                focusGameCanvas();
+                e.preventDefault();
+            }
+        }, { passive: false, capture: true });
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', function() { resize(); });
+            document.addEventListener('DOMContentLoaded', function() { resize(); focusGameCanvas(); });
         } else {
             resize();
+            focusGameCanvas();
         }
         // Work-around chromium autoplay policy
         // https://github.com/emscripten-core/emscripten/issues/6511

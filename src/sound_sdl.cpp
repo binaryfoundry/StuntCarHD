@@ -131,8 +131,8 @@ bool sound_init(void) {
     desired.format = AUDIO_F32SYS;
     desired.channels = 2;
 #if defined(__EMSCRIPTEN__)
-    /* Web: larger buffer so main-thread game logic doesn't cause underruns (256 ≈ 5.8 ms, 1024 ≈ 23 ms). */
-    desired.samples = 1024;
+    /* Web: larger buffer so browser/iframe scheduling doesn't cause underruns (2048 is about 46 ms). */
+    desired.samples = 2048;
 #else
     desired.samples = 256;
 #endif
