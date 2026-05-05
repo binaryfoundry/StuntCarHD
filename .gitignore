@@ -27,3 +27,10 @@ Makefile
 compile_commands.json
 stuntcarracer.dir/
 SCRlog.txt
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
